@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d10" />
+  <meta name="description" content="Coach de préparation gratuit pour course à pied, triathlon et HYROX." />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>RunPrep MultiSport — Coach gratuit</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <div><strong>RunPrep</strong><span>MultiSport V2</span></div>
+      </div>
+      <div class="top-actions">
+        <button id="installBtn" class="btn secondary hidden">Installer</button>
+        <button id="notifBtn" class="btn secondary">Activer les notifications</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="screenWelcome" class="screen active">
+        <div class="hero card">
+          <div>
+            <span class="eyebrow">100 % gratuit • sans API • données locales</span>
+            <h1>Ta préparation jusqu'au jour J.</h1>
+            <p>Course à pied, triathlon ou HYROX : construis un plan progressif, fais le bilan après chaque séance et laisse le moteur ajuster la charge selon ta fatigue et tes retours.</p>
+            <div class="hero-actions">
+              <button id="startBtn" class="btn primary large">Créer ma préparation</button>
+              <button id="resumeBtn" class="btn secondary large hidden">Reprendre mon plan</button>
+            </div>
+          </div>
+          <div class="hero-stats">
+            <div><strong>3</strong><span>sports</span></div>
+            <div><strong>0 €</strong><span>abonnement</span></div>
+            <div><strong>Local</strong><span>données privées</span></div>
+          </div>
+        </div>
+        <div class="grid3 sport-home-grid">
+          <button class="card mini sport-home" data-start-sport="running"><span class="sport-icon">RUN</span><h3>Course à pied</h3><p>5 km, 10 km, semi, marathon ou distance personnalisée.</p></button>
+          <button class="card mini sport-home" data-start-sport="triathlon"><span class="sport-icon">TRI</span><h3>Triathlon</h3><p>Natation, vélo, course et séances enchaînées.</p></button>
+          <button class="card mini sport-home" data-start-sport="hyrox"><span class="sport-icon">HYX</span><h3>HYROX</h3><p>Course, force, stations et travail sous fatigue.</p></button>
+        </div>
+      </section>
+
+      <section id="screenQuestionnaire" class="screen">
+        <div class="section-head">
+          <div><span class="eyebrow">Étape 1/3</span><h2>Construisons ton profil</h2></div>
+          <button class="btn ghost" data-go="welcome">Retour</button>
+        </div>
+
+        <form id="questionnaire" class="form-grid">
+          <div class="card form-section full">
+            <h3>Sport</h3>
+            <div class="sport-picker" id="sportPicker">
+              <label><input type="radio" name="sport" value="running" checked /><span><strong>Course à pied</strong><small>Route / running</small></span></label>
+              <label><input type="radio" name="sport" value="triathlon" /><span><strong>Triathlon</strong><small>Swim • Bike • Run</small></span></label>
+              <label><input type="radio" name="sport" value="hyrox" /><span><strong>HYROX</strong><small>Run • Stations</small></span></label>
+            </div>
+          </div>
+
+          <div class="card form-section full">
+            <h3>Objectif</h3>
+            <div id="runningGoal" class="sport-specific">
+              <div class="fields two">
+                <label>Type de course
+                  <select id="raceType">
+                    <option value="5">5 km</option><option value="10" selected>10 km</option><option value="21.0975">Semi-marathon</option><option value="42.195">Marathon</option><option value="custom">Distance personnalisée</option>
+                  </select>
+                </label>
+                <label id="customDistanceWrap" class="hidden">Distance (km)<input id="customDistance" type="number" min="1" max="200" step="0.1" value="15" /></label>
+              </div>
+            </div>
+
+            <div id="triathlonGoal" class="sport-specific hidden">
+              <div class="fields two">
+                <label>Format de triathlon
+                  <select id="triDistance">
+                    <option value="sprint">Sprint — 750 m / 20 km / 5 km</option>
+                    <option value="standard" selected>Standard — 1,5 km / 40 km / 10 km</option>
+                    <option value="middle">Longue distance 70.3 — 1,9 km / 90 km / 21,1 km</option>
+                    <option value="long">Longue distance — 3,8 km / 180 km / 42,2 km</option>
+                  </select>
+                </label>
+                <label>Priorité
+                  <select id="triPriority"><option value="balanced" selected>Équilibrée</option><option value="swim">Progresser surtout en natation</option><option value="bike">Progresser surtout à vélo</option><option value="run">Progresser surtout en course</option></select>
+                </label>
+              </div>
+            </div>
+
+            <div id="hyroxGoal" class="sport-specific hidden">
+              <div class="fields two">
+                <label>Format
+                  <select id="hyroxDivision"><option value="open" selected>Individual Open</option><option value="pro">Individual Pro</option><option value="doubles">Doubles</option><option value="relay">Relay</option></select>
+                </label>
+                <label>Priorité
+                  <select id="hyroxPriority"><option value="balanced" selected>Équilibrée</option><option value="running">Course à pied</option><option value="strength">Force / stations</option><option value="engine">Endurance sous fatigue</option></select>
+                </label>
+              </div>
+            </div>
+
+            <div class="fields two common-goal-fields">
+              <label>Date de la compétition<input id="raceDate" type="date" required /></label>
+              <label>Objectif principal
+                <select id="goalType"><option value="finish">Finir confortablement</option><option value="improve" selected>Améliorer ma performance</option><option value="time">Atteindre un chrono précis</option></select>
+              </label>
+              <label id="goalTimeWrap" class="hidden">Chrono cible<input id="goalTime" type="text" placeholder="ex. 01:20:00" /></label>
+            </div>
+          </div>
+
+          <div class="card form-section">
+            <h3>Niveau actuel</h3>
+            <div class="fields">
+              <label>Expérience sportive régulière
+                <select id="experience"><option value="0">Je débute</option><option value="1">Moins de 6 mois</option><option value="2" selected>6 à 24 mois</option><option value="3">Plus de 2 ans</option></select>
+              </label>
+
+              <div id="runningLevel" class="sport-specific fields nested-fields">
+                <label>Volume course actuel (km/semaine)<input id="weeklyKm" type="number" min="0" max="250" value="20" /></label>
+                <label>Plus longue sortie récente (km)<input id="longRunKm" type="number" min="0" max="80" step="0.5" value="8" /></label>
+                <label>Temps récent sur 5 km (optionnel)<input id="time5k" type="text" placeholder="ex. 00:25:30" /></label>
+                <label>Temps récent sur 10 km (optionnel)<input id="time10k" type="text" placeholder="ex. 00:52:00" /></label>
+              </div>
+
+              <div id="triathlonLevel" class="sport-specific fields nested-fields hidden">
+                <label>Natation actuelle (m/semaine)<input id="swimWeeklyM" type="number" min="0" max="30000" step="100" value="1500" /></label>
+                <label>Vélo actuel (h/semaine)<input id="bikeWeeklyHours" type="number" min="0" max="30" step="0.5" value="2" /></label>
+                <label>Course actuelle (km/semaine)<input id="triRunWeeklyKm" type="number" min="0" max="200" value="15" /></label>
+                <label>Temps récent sur 5 km (optionnel)<input id="triTime5k" type="text" placeholder="ex. 00:26:00" /></label>
+                <label class="checkbox-line"><input id="poolAccess" type="checkbox" checked /> J'ai accès à une piscine ou à un lieu de nage adapté</label>
+                <label class="checkbox-line"><input id="bikeAccess" type="checkbox" checked /> J'ai accès à un vélo ou home-trainer</label>
+              </div>
+
+              <div id="hyroxLevel" class="sport-specific fields nested-fields hidden">
+                <label>Course actuelle (km/semaine)<input id="hyroxWeeklyKm" type="number" min="0" max="150" value="15" /></label>
+                <label>Renforcement / musculation (séances/semaine)<input id="strengthSessions" type="number" min="0" max="7" value="2" /></label>
+                <label>Temps récent sur 5 km (optionnel)<input id="hyroxTime5k" type="text" placeholder="ex. 00:25:00" /></label>
+                <label>Niveau en musculation
+                  <select id="strengthLevel"><option value="beginner">Débutant</option><option value="intermediate" selected>Intermédiaire</option><option value="advanced">Avancé</option></select>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="card form-section">
+            <h3>Disponibilités</h3>
+            <div class="fields">
+              <label>Séances par semaine
+                <select id="sessionsPerWeek"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option></select>
+              </label>
+              <label>Temps maximum par séance (min)<input id="maxSessionMin" type="number" min="20" max="300" value="75" /></label>
+              <fieldset><legend>Jours possibles</legend><div class="day-picker" id="dayPicker">
+                <label><input type="checkbox" value="1" checked /> Lun</label><label><input type="checkbox" value="2" /> Mar</label><label><input type="checkbox" value="3" checked /> Mer</label><label><input type="checkbox" value="4" /> Jeu</label><label><input type="checkbox" value="5" checked /> Ven</label><label><input type="checkbox" value="6" /> Sam</label><label><input type="checkbox" value="0" /> Dim</label>
+              </div></fieldset>
+              <label>Heure habituelle d'entraînement<input id="reminderTime" type="time" value="18:30" /></label>
+            </div>
+          </div>
+
+          <div id="hyroxEquipmentCard" class="card form-section full sport-specific hidden">
+            <h3>Matériel HYROX disponible</h3>
+            <p class="helper">Le plan propose des alternatives lorsqu'une station n'est pas disponible.</p>
+            <div class="equipment-grid">
+              <label><input class="hyrox-equipment" type="checkbox" value="skierg" checked /> SkiErg</label>
+              <label><input class="hyrox-equipment" type="checkbox" value="sled" checked /> Sled push / pull</label>
+              <label><input class="hyrox-equipment" type="checkbox" value="rower" checked /> Rameur</label>
+              <label><input class="hyrox-equipment" type="checkbox" value="kettlebells" checked /> Kettlebells</label>
+              <label><input class="hyrox-equipment" type="checkbox" value="sandbag" checked /> Sandbag</label>
+              <label><input class="hyrox-equipment" type="checkbox" value="wallball" checked /> Wall ball</label>
+            </div>
+          </div>
+
+          <div class="card form-section full">
+            <h3>Sommeil, fatigue et contraintes</h3>
+            <div class="fields three">
+              <label>Sommeil moyen<select id="sleepHours"><option value="5">Moins de 6 h</option><option value="6">6 à 7 h</option><option value="7" selected>7 à 8 h</option><option value="8">Plus de 8 h</option></select></label>
+              <label>Stress actuel<select id="stress"><option value="1">Faible</option><option value="2" selected>Modéré</option><option value="3">Élevé</option></select></label>
+              <label>Autres sports / semaine<input id="crossTraining" type="number" min="0" max="10" value="0" /></label>
+            </div>
+          </div>
+
+          <div class="card form-section full safety-card">
+            <div class="safety-title"><span>⚕</span><div><h3>Questionnaire de sécurité sportive</h3><p>Ce questionnaire ne remplace pas un avis médical. Si tu coches un signal d'alerte, le plan ne sera pas généré automatiquement.</p></div></div>
+            <div class="safety-grid">
+              <label><input class="redflag" type="checkbox" /> Douleur ou pression thoracique pendant ou après l'effort</label>
+              <label><input class="redflag" type="checkbox" /> Malaise, perte de connaissance ou vertiges inexpliqués à l'effort</label>
+              <label><input class="redflag" type="checkbox" /> Maladie cardiaque connue ou restriction médicale d'activité</label>
+              <label><input class="redflag" type="checkbox" /> Essoufflement inhabituel au repos ou pour un effort très faible</label>
+              <label><input class="redflag" type="checkbox" /> Blessure actuelle qui empêche de pratiquer normalement</label>
+              <label><input class="redflag" type="checkbox" /> Professionnel de santé ayant demandé d'éviter l'entraînement intense actuellement</label>
+            </div>
+            <label class="checkbox-line"><input id="acceptSafety" type="checkbox" required /> Je comprends que RunPrep n'établit pas de diagnostic médical et que je dois interrompre l'effort en cas de symptôme inhabituel.</label>
+          </div>
+
+          <div class="full form-submit"><p id="formError" class="error hidden"></p><button class="btn primary large" type="submit">Générer mon plan</button></div>
+        </form>
+      </section>
+
+      <section id="screenSafety" class="screen">
+        <div class="card safety-stop"><div class="stop-icon">!</div><span class="eyebrow">Sécurité</span><h2>Le plan n'a pas été généré.</h2><p>Tu as signalé au moins un élément qui peut justifier un avis médical avant de commencer ou d'intensifier l'entraînement. RunPrep ne peut pas déterminer si l'exercice est approprié dans cette situation.</p><p>Tu peux revenir au questionnaire après avoir obtenu un avis adapté à ta situation.</p><button class="btn primary" data-go="questionnaire">Modifier mes réponses</button></div>
+      </section>
+
+      <section id="screenDashboard" class="screen">
+        <div class="dashboard-head">
+          <div><span class="eyebrow" id="dashboardSport">Mon plan</span><h2 id="dashboardTitle">Préparation</h2><p id="dashboardSubtitle"></p></div>
+          <div class="top-actions"><button id="calendarExportBtn" class="btn secondary">Exporter calendrier</button><button id="editProfileBtn" class="btn secondary">Modifier le profil</button><button id="resetBtn" class="btn ghost danger">Réinitialiser</button></div>
+        </div>
+
+        <div id="notificationBanner" class="notification-banner hidden"><div><strong>Active les notifications</strong><span>Reçois un rappel quand une séance est prévue aujourd'hui. Pour un rappel fiable lorsque la PWA est fermée, utilise aussi l'export calendrier.</span></div><button id="bannerNotifBtn" class="btn primary">Activer</button></div>
+        <div id="sportNotice" class="sport-notice hidden"></div>
+        <div class="metrics" id="metrics"></div>
+
+        <div class="dashboard-grid">
+          <div>
+            <div class="section-head compact"><div><span class="eyebrow">Aujourd'hui / prochaine</span><h3>Prochaine séance</h3></div></div>
+            <div id="nextSession" class="card next-session"></div>
+            <div class="section-head compact spaced"><div><span class="eyebrow">Planning</span><h3>Semaines à venir</h3></div><select id="weekFilter"></select></div>
+            <div id="planList" class="plan-list"></div>
+          </div>
+          <aside>
+            <div class="card coach-card"><span class="eyebrow">Adaptation</span><h3>État du plan</h3><div id="adaptationState"></div></div>
+            <div class="card privacy-card"><span class="eyebrow">Confidentialité</span><h3>Tout reste sur ton appareil</h3><p>Le profil, les réponses de sécurité, le plan et les retours sont enregistrés dans le stockage local du navigateur. Aucun compte ni serveur n'est utilisé.</p></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="feedbackDialog">
+      <form method="dialog" id="feedbackForm">
+        <input type="hidden" id="feedbackSessionId" />
+        <div class="dialog-head"><div><span class="eyebrow">Après la séance</span><h3 id="feedbackTitle">Comment ça s'est passé ?</h3></div><button value="cancel" class="icon-btn" aria-label="Fermer">×</button></div>
+        <div class="fields">
+          <label>Statut<select id="feedbackStatus"><option value="done">Séance faite</option><option value="missed">Séance ratée</option></select></label>
+          <label>Difficulté ressentie<select id="feedbackDifficulty"><option value="1">Très facile</option><option value="2">Facile</option><option value="3" selected>Comme prévu</option><option value="4">Difficile</option><option value="5">Très difficile</option></select></label>
+          <label>Fatigue actuelle<select id="feedbackFatigue"><option value="1">Très faible</option><option value="2">Faible</option><option value="3" selected>Normale</option><option value="4">Élevée</option><option value="5">Très élevée</option></select></label>
+          <label class="checkbox-line"><input id="feedbackPain" type="checkbox" /> J'ai ressenti une douleur inhabituelle ou qui modifie mon mouvement</label>
+          <label>Note (optionnel)<textarea id="feedbackNote" rows="3" placeholder="Ex. jambes lourdes, séance facile, difficulté sur les wall balls..."></textarea></label>
+        </div>
+        <div class="dialog-actions"><button value="cancel" class="btn secondary">Annuler</button><button id="saveFeedbackBtn" value="default" class="btn primary">Enregistrer et adapter</button></div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

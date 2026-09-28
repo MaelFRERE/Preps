@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: runprep-multisport
+    runtime: static
+    buildCommand: echo "No build step"
+    staticPublishPath: .
+    autoDeployTrigger: commit
