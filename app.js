@@ -1,301 +1,220 @@
-const STORAGE_KEY = 'runprep_multisport_v2';
-const LEGACY_KEY = 'runprep_v1';
-const $ = (id) => document.getElementById(id);
-const screens = [...document.querySelectorAll('.screen')];
-let deferredInstallPrompt = null;
-
-function emptyState(){ return { profile:null, plan:[], feedback:{}, adaptations:[], createdAt:null }; }
-function loadState(){
-  try {
-    const current = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if(current) return current;
-    const legacy = JSON.parse(localStorage.getItem(LEGACY_KEY));
-    if(legacy?.profile){
-      legacy.profile.sport = 'running';
-      legacy.plan = (legacy.plan||[]).map(s=>({
-        ...s,
-        discipline:'Course',
-        intensity:s.type==='race'?'race':['tempo','interval','racepace'].includes(s.type)?'hard':'easy'
-      }));
-      return legacy;
-    }
-  } catch {}
-  return null;
+/* RunPrep V3 UI. No remote scripts, analytics, account or API. */
+'use strict';
+const E=window.RunPrepEngine,C=window.RunPrepCalendar,$=id=>document.getElementById(id);
+const STORAGE_KEY='runprep_multisport_v3',OLD_KEY='runprep_multisport_v2';
+const DAY_NAMES={1:'Lundi',2:'Mardi',3:'Mercredi',4:'Jeudi',5:'Vendredi',6:'Samedi',0:'Dimanche'};
+const DAY_ORDER=[1,2,3,4,5,6,0];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDate=s=>new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'short',year:'numeric'}).format(new Date(s+'T12:00:00'));
+const fullDate=s=>new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'long',year:'numeric'}).format(new Date(s+'T12:00:00'));
+const hourText=min=>`${Math.floor(min/60)} h ${String(Math.round(min%60)).padStart(2,'0')}`;
+let state=null,baseResult=null,currentResult=null,legacy=null,deferredInstallPrompt=null,toastTimer;
+function toast(msg){clearTimeout(toastTimer);$('toast').textContent=msg;$('toast').classList.remove('hidden');toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),5500);}
+function screen(name){document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active',s.id==='screen'+name[0].toUpperCase()+name.slice(1)));window.scrollTo({top:0,behavior:'smooth'});}
+function persist(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return true;}catch{toast('Stockage local indisponible ou plein. Exporte une sauvegarde avant de fermer.');return false;}}
+function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
+function buildPickers(){
+  for(const [container,prefix,checked] of [['dayPicker','day',[1,3,0]],['poolDayPicker','pool',DAY_ORDER]]){
+    $(container).innerHTML=DAY_ORDER.map(d=>`<label><input type="checkbox" id="${prefix}${d}" value="${d}" ${checked.includes(d)?'checked':''}>${DAY_NAMES[d].slice(0,3)}</label>`).join('');
+  }
+  $('longDay').innerHTML=DAY_ORDER.map(d=>`<option value="${d}" ${d===0?'selected':''}>${DAY_NAMES[d]}</option>`).join('');
+  $('dayCaps').innerHTML=DAY_ORDER.map(d=>`<label>${DAY_NAMES[d]} : limite particuliere (min)<input id="cap${d}" type="number" min="15" max="300" placeholder="Reglage ordinaire / long"></label>`).join('');
+  $('equipmentPicker').innerHTML=Object.entries({skierg:'SkiErg',sled:'Sled',rower:'Rameur',kettlebells:'Kettlebells',sandbag:'Sandbag',wallball:'Wall ball'}).map(([k,label])=>`<label><input type="checkbox" class="equipment" value="${k}" checked>${label}</label>`).join('');
 }
-let state = loadState() || emptyState();
-
-function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); refreshResume(); }
-function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
-function showScreen(name){ screens.forEach(s=>s.classList.remove('active')); $('screen'+cap(name)).classList.add('active'); window.scrollTo({top:0,behavior:'smooth'}); }
-function pad(n){ return String(n).padStart(2,'0'); }
-function isoDate(d){ const x=new Date(d); return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`; }
-function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
-function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
-function daysBetween(a,b){ return Math.ceil((startOfDay(b)-startOfDay(a))/86400000); }
-function formatDate(d){ return new Intl.DateTimeFormat('fr-FR',{weekday:'short',day:'numeric',month:'short'}).format(new Date(d+'T12:00:00')); }
-function fullDate(d){ return new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'long',year:'numeric'}).format(new Date(d)); }
-function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
-function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),2800); }
-function parseTimeString(v){ if(!v) return null; const p=v.trim().split(':').map(Number); if(p.some(Number.isNaN)) return null; if(p.length===2) return p[0]*3600+p[1]*60; if(p.length===3) return p[0]*3600+p[1]*60+p[2]; return null; }
-function secPerKm(totalSec,km){ return totalSec && km ? totalSec/km : null; }
-function paceText(sec){ if(!sec) return 'à l’effort'; const s=Math.round(sec); return `${Math.floor(s/60)}:${pad(s%60)}/km`; }
-function sportLabel(s){ return s==='triathlon'?'Triathlon':s==='hyrox'?'HYROX':'Course à pied'; }
-function phaseLabel(p){ return ({base:'Base',build:'Développement',specific:'Spécifique',taper:'Affûtage',race:'Course'})[p] || p; }
-
-function refreshResume(){ $('resumeBtn').classList.toggle('hidden', !state?.profile || !state?.plan?.length); }
-refreshResume();
-
-const defaultRace=addDays(new Date(),70);
-$('raceDate').value=isoDate(defaultRace);
-$('raceDate').min=isoDate(addDays(new Date(),7));
-
-function selectedSport(){ return document.querySelector('input[name="sport"]:checked')?.value || 'running'; }
-function updateSportUI(){
-  const sport=selectedSport();
-  document.querySelectorAll('.sport-specific').forEach(el=>el.classList.add('hidden'));
-  if(sport==='running'){ $('runningGoal').classList.remove('hidden'); $('runningLevel').classList.remove('hidden'); }
-  if(sport==='triathlon'){ $('triathlonGoal').classList.remove('hidden'); $('triathlonLevel').classList.remove('hidden'); }
-  if(sport==='hyrox'){ $('hyroxGoal').classList.remove('hidden'); $('hyroxLevel').classList.remove('hidden'); $('hyroxEquipmentCard').classList.remove('hidden'); }
-  const suggested = sport==='running' ? 3 : sport==='triathlon' ? 5 : 4;
-  if(!state.profile || state.profile.sport!==sport) $('sessionsPerWeek').value=String(suggested);
+buildPickers();
+const textFields=['startDate','raceDate','goalType','goalTime','easyPace','time5k','time10k','swimPace','triDistance','hyroxDivision','reminderTime'];
+const numberFields=['raceDistance','experience','runWeeklyMin','recentLongRunMin','swimWeeklyM','bikeWeeklyHours','recentLongBikeMin','strengthSessions','recentStrengthMin','sessionsPerWeek','maxSessionMin','longSessionMin','longDay','weeklyHoursCap','maxRunMin','maxBikeMin','maxSwimMin','maxStrengthMin','sleepHours','stress'];
+function sport(){return document.querySelector('input[name="sport"]:checked').value;}
+function sportUI(){
+  for(const name of ['running','triathlon','hyrox'])document.querySelectorAll('.for-'+name).forEach(el=>{const show=name===sport();el.classList.toggle('hidden',!show);if(el.matches('label'))el.querySelectorAll('input,select').forEach(i=>i.disabled=!show);else el.querySelectorAll('input,select').forEach(i=>i.disabled=!show);});
+  $('goalTimeWrap').classList.toggle('hidden',$('goalType').value!=='time');
 }
-document.querySelectorAll('input[name="sport"]').forEach(r=>r.addEventListener('change',updateSportUI));
-$('raceType').addEventListener('change',e=>$('customDistanceWrap').classList.toggle('hidden',e.target.value!=='custom'));
-$('goalType').addEventListener('change',e=>$('goalTimeWrap').classList.toggle('hidden',e.target.value!=='time'));
-$('startBtn').onclick=()=>{ updateSportUI(); showScreen('questionnaire'); };
-document.querySelectorAll('[data-start-sport]').forEach(btn=>btn.onclick=()=>{
-  const radio=document.querySelector(`input[name="sport"][value="${btn.dataset.startSport}"]`); if(radio) radio.checked=true;
-  updateSportUI(); showScreen('questionnaire');
-});
-$('resumeBtn').onclick=()=>{ renderDashboard(); showScreen('dashboard'); };
-$('editProfileBtn').onclick=()=>{ populateForm(state.profile); showScreen('questionnaire'); };
-document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>showScreen(b.dataset.go));
-
-function getSelectedDays(){ return [...document.querySelectorAll('#dayPicker input:checked')].map(x=>Number(x.value)); }
-function getHyroxEquipment(){ return [...document.querySelectorAll('.hyrox-equipment:checked')].map(x=>x.value); }
-function getRaceDistance(){ return $('raceType').value==='custom' ? Number($('customDistance').value) : Number($('raceType').value); }
-
-$('questionnaire').addEventListener('submit',(e)=>{
-  e.preventDefault();
-  const sport=selectedSport();
-  const days=getSelectedDays();
-  const sessions=Number($('sessionsPerWeek').value);
-  const error=$('formError'); error.classList.add('hidden');
-  if(days.length < sessions){ error.textContent=`Choisis au moins ${sessions} jours disponibles.`; error.classList.remove('hidden'); return; }
-  const raceDate=new Date($('raceDate').value+'T12:00:00');
-  if(daysBetween(new Date(),raceDate)<7){ error.textContent='Choisis une compétition dans au moins 7 jours.'; error.classList.remove('hidden'); return; }
-  if(sport==='triathlon' && sessions<3){ error.textContent='Pour le triathlon, choisis au moins 3 séances par semaine afin de couvrir les trois disciplines.'; error.classList.remove('hidden'); return; }
-  if(sport==='hyrox' && sessions<3){ error.textContent='Pour HYROX, choisis au moins 3 séances par semaine afin de combiner course et renforcement.'; error.classList.remove('hidden'); return; }
-  const hasRedFlag=[...document.querySelectorAll('.redflag')].some(x=>x.checked);
-  const profile={
-    sport,
-    raceDate:$('raceDate').value,
-    goalType:$('goalType').value,
-    goalTime:$('goalTime').value.trim(),
-    experience:Number($('experience').value),
-    sessionsPerWeek:sessions,
-    maxSessionMin:Number($('maxSessionMin').value),
-    days,
-    reminderTime:$('reminderTime').value,
-    sleepHours:Number($('sleepHours').value),
-    stress:Number($('stress').value),
-    crossTraining:Number($('crossTraining').value),
-    hasRedFlag,
-    raceType:$('raceType').value,
-    raceDistance:getRaceDistance(),
-    weeklyKm:Number($('weeklyKm').value||0),
-    longRunKm:Number($('longRunKm').value||0),
-    time5k:$('time5k').value.trim(),
-    time10k:$('time10k').value.trim(),
-    triDistance:$('triDistance').value,
-    triPriority:$('triPriority').value,
-    swimWeeklyM:Number($('swimWeeklyM').value||0),
-    bikeWeeklyHours:Number($('bikeWeeklyHours').value||0),
-    triRunWeeklyKm:Number($('triRunWeeklyKm').value||0),
-    triTime5k:$('triTime5k').value.trim(),
-    poolAccess:$('poolAccess').checked,
-    bikeAccess:$('bikeAccess').checked,
-    hyroxDivision:$('hyroxDivision').value,
-    hyroxPriority:$('hyroxPriority').value,
-    hyroxWeeklyKm:Number($('hyroxWeeklyKm').value||0),
-    strengthSessions:Number($('strengthSessions').value||0),
-    hyroxTime5k:$('hyroxTime5k').value.trim(),
-    strengthLevel:$('strengthLevel').value,
-    hyroxEquipment:getHyroxEquipment()
-  };
-  state={profile,plan:[],feedback:{},adaptations:[],createdAt:new Date().toISOString()}; saveState();
-  if(hasRedFlag){ showScreen('safety'); return; }
-  state.plan=generatePlan(profile); saveState(); renderDashboard(); showScreen('dashboard');
-});
-
-function populateForm(p){
-  if(!p) return;
-  const sport=p.sport||'running'; const radio=document.querySelector(`input[name="sport"][value="${sport}"]`); if(radio) radio.checked=true; updateSportUI();
-  $('raceDate').value=p.raceDate; $('goalType').value=p.goalType||'improve'; $('goalTime').value=p.goalTime||''; $('goalTimeWrap').classList.toggle('hidden',p.goalType!=='time');
-  $('experience').value=p.experience??2; $('sessionsPerWeek').value=p.sessionsPerWeek||3; $('maxSessionMin').value=p.maxSessionMin||75; $('reminderTime').value=p.reminderTime||'18:30'; $('sleepHours').value=p.sleepHours||7; $('stress').value=p.stress||2; $('crossTraining').value=p.crossTraining||0;
-  $('raceType').value=p.raceType||'10'; $('customDistance').value=p.raceDistance||15; $('customDistanceWrap').classList.toggle('hidden',p.raceType!=='custom');
-  $('weeklyKm').value=p.weeklyKm??20; $('longRunKm').value=p.longRunKm??8; $('time5k').value=p.time5k||''; $('time10k').value=p.time10k||'';
-  $('triDistance').value=p.triDistance||'standard'; $('triPriority').value=p.triPriority||'balanced'; $('swimWeeklyM').value=p.swimWeeklyM??1500; $('bikeWeeklyHours').value=p.bikeWeeklyHours??2; $('triRunWeeklyKm').value=p.triRunWeeklyKm??15; $('triTime5k').value=p.triTime5k||''; $('poolAccess').checked=p.poolAccess!==false; $('bikeAccess').checked=p.bikeAccess!==false;
-  $('hyroxDivision').value=p.hyroxDivision||'open'; $('hyroxPriority').value=p.hyroxPriority||'balanced'; $('hyroxWeeklyKm').value=p.hyroxWeeklyKm??15; $('strengthSessions').value=p.strengthSessions??2; $('hyroxTime5k').value=p.hyroxTime5k||''; $('strengthLevel').value=p.strengthLevel||'intermediate';
-  const eq=p.hyroxEquipment||['skierg','sled','rower','kettlebells','sandbag','wallball']; document.querySelectorAll('.hyrox-equipment').forEach(x=>x.checked=eq.includes(x.value));
+function suggestDays(s){
+  const days=s==='running'?[1,3,0]:s==='triathlon'?[1,2,4,6,0]:[1,3,5,0];
+  $('sessionsPerWeek').value=days.length;$('longDay').value='0';
+  document.querySelectorAll('#dayPicker input').forEach(x=>x.checked=days.includes(Number(x.value)));
+}
+$('startDate').value=E.localToday();$('startDate').min=E.localToday();$('raceDate').value=E.dateAdd(E.localToday(),112);
+$('raceDate').min=E.dateAdd(E.localToday(),14);
+function readProfile(){
+  const p={sport:sport(),hasRedFlag:[...document.querySelectorAll('.redflag')].some(x=>x.checked),adultConfirmed:$('adultConfirmed').checked,poolAccess:$('poolAccess').checked,bikeAccess:$('bikeAccess').checked};
+  for(const k of textFields)p[k]=$(k).value.trim();for(const k of numberFields)p[k]=Number($(k).value);
+  p.days=[...document.querySelectorAll('#dayPicker input:checked')].map(x=>Number(x.value));
+  p.poolDays=[...document.querySelectorAll('#poolDayPicker input:checked')].map(x=>Number(x.value));
+  if(p.sport==='triathlon'&&p.poolDays.length===0)throw new Error('Selectionne au moins un jour possible pour nager.');
+  p.hyroxEquipment=[...document.querySelectorAll('.equipment:checked')].map(x=>x.value);
+  p.dayMinutes={};for(const d of DAY_ORDER)if($('cap'+d).value!=='')p.dayMinutes[d]=Number($('cap'+d).value);
+  p.triTime5k=p.time5k;p.hyroxTime5k=p.time5k;
+  if(p.goalType!=='time')p.goalTime='';
+  return p;
+}
+function populate(p){
+  if(!p)return;
+  const radio=document.querySelector(`input[name="sport"][value="${['running','triathlon','hyrox'].includes(p.sport)?p.sport:'running'}"]`);radio.checked=true;sportUI();
+  for(const k of [...textFields,...numberFields])if(p[k]!=null)$(k).value=p[k];
+  $('startDate').value=E.localToday();
+  const oldPace=p.sport==='triathlon'?p.triTime5k:p.sport==='hyrox'?p.hyroxTime5k:p.time5k;$('time5k').value=oldPace||'';
+  // Old pace interpretation was ambiguous: force confirmation of real MINUTES.
+  if(!('runWeeklyMin' in p)){ $('runWeeklyMin').value='';$('recentLongRunMin').value=''; }
+  if(!('recentLongBikeMin' in p)&&p.sport==='triathlon')$('recentLongBikeMin').value='';
   document.querySelectorAll('#dayPicker input').forEach(x=>x.checked=(p.days||[]).includes(Number(x.value)));
+  if(p.longDay==null)$('longDay').value=(p.days||[]).includes(0)?0:(p.days||[1]).at(-1);
+  for(const d of DAY_ORDER)$('cap'+d).value=p.dayMinutes?.[d]??'';
+  document.querySelectorAll('#poolDayPicker input').forEach(x=>x.checked=(p.poolDays||DAY_ORDER).includes(Number(x.value)));
+  document.querySelectorAll('.equipment').forEach(x=>x.checked=(p.hyroxEquipment||[]).includes(x.value));
+  $('poolAccess').checked=p.poolAccess!==false;$('bikeAccess').checked=p.bikeAccess!==false;
+  document.querySelectorAll('.redflag').forEach(x=>x.checked=false);
+  $('adultConfirmed').checked=false;$('acceptSafety').checked=false;
+  sportUI();
 }
-
-function estimatePaces(profile){
-  let racePace=null; let t5=null; let t10=null;
-  if(profile.sport==='running'){ t5=parseTimeString(profile.time5k); t10=parseTimeString(profile.time10k); const target=parseTimeString(profile.goalTime); if(profile.goalType==='time'&&target) racePace=secPerKm(target,profile.raceDistance); else if(t10) racePace=secPerKm(t10,10); else if(t5) racePace=secPerKm(t5,5)*1.06; }
-  else { t5=parseTimeString(profile.sport==='triathlon'?profile.triTime5k:profile.hyroxTime5k); if(t5) racePace=secPerKm(t5,5)*1.08; }
-  if(!racePace) return {easy:null,tempo:null,interval:null,race:null};
-  return {race:racePace,easy:racePace+75,tempo:Math.max(racePace+10,racePace*1.03),interval:Math.max(racePace-18,racePace*.92)};
+function openForm(){if(state)populate(state.profile);screen('questionnaire');}
+$('startBtn').onclick=()=>{if(state)populate(state.profile);sportUI();screen('questionnaire');};
+$('editProfileBtn').onclick=openForm;
+document.querySelectorAll('[data-start-sport]').forEach(btn=>btn.onclick=()=>{document.querySelector(`input[name="sport"][value="${btn.dataset.startSport}"]`).checked=true;suggestDays(btn.dataset.startSport);sportUI();screen('questionnaire');});
+document.querySelectorAll('input[name="sport"]').forEach(r=>r.onchange=()=>{suggestDays(sport());sportUI();});
+$('goalType').onchange=sportUI;
+document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>screen(b.dataset.go));
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
+function rebuild(){
+  if(!state)return;
+  baseResult=E.generatePlan(state.profile);
+  currentResult=E.adaptPlan(baseResult.plan,state.feedback,state.profile,E.localToday(),state.hold);
+  if(currentResult.hold&&!state.hold){state.hold=true;persist();}
 }
-
-function chooseTrainingDays(profile){
-  const preferred=[...profile.days]; const weekend=preferred.filter(d=>d===0||d===6), others=preferred.filter(d=>d!==0&&d!==6); const chosen=[];
-  if(weekend.length) chosen.push(weekend[weekend.length-1]);
-  const pool=[...others,...weekend.filter(d=>!chosen.includes(d))];
-  while(chosen.length<profile.sessionsPerWeek && pool.length) chosen.push(pool.shift());
-  return chosen.sort((a,b)=>((a+6)%7)-((b+6)%7));
-}
-function phaseForWeek(week,totalWeeks){ const left=totalWeeks-week+1; if(left<=1)return'race'; if(left<=3)return'taper'; const ratio=week/Math.max(totalWeeks,1); if(ratio<.28)return'base'; if(ratio<.72)return'build'; return'specific'; }
-function weekLoadFactor(week,totalWeeks,profile){ const phase=phaseForWeek(week,totalWeeks); let growth=1+Math.min(.42,(week-1)*.04); if(week%4===0)growth*=.8; if(phase==='taper')growth*=week===totalWeeks-2?.74:.58; if(phase==='race')growth=.35; if(profile.stress===3||profile.sleepHours<=5)growth*=.9; return growth; }
-
-function baseSession(type,minutes,week,phase,profile,discipline,intensity='easy'){
-  return {type,minutes:Math.round(clamp(minutes,20,profile.maxSessionMin)),week,phase,status:'planned',adapted:false,discipline,intensity};
-}
-function makeRunningSession(type,minutes,week,phase,paces,profile){
-  const b=baseSession(type,minutes,week,phase,profile,'Course',['tempo','interval','racepace'].includes(type)?'hard':type==='race'?'race':'easy'); const m=b.minutes;
-  if(type==='easy') return {...b,title:'Endurance facile',detail:`${m} min en aisance respiratoire (RPE 2–3/10${paces.easy?`, env. ${paceText(paces.easy)}`:''}). Tu dois pouvoir parler en phrases complètes.`};
-  if(type==='recovery') return {...b,title:'Footing récupération',detail:`${m} min très faciles (RPE 1–2/10). Aucun objectif de vitesse.`};
-  if(type==='long') return {...b,title:'Sortie longue',detail:`${m} min faciles (RPE 2–3/10${paces.easy?`, proche de ${paceText(paces.easy)}`:''}). Reste régulier, sans finir épuisé.`};
-  if(type==='tempo') return {...b,title:'Seuil / tempo',detail:`10–15 min faciles, puis ${Math.max(10,Math.round(m*.42))} min soutenues mais contrôlées (RPE 6–7/10${paces.tempo?`, env. ${paceText(paces.tempo)}`:''}), puis retour au calme.`};
-  if(type==='interval') return {...b,title:'Intervalles courts',detail:`15 min faciles, puis 6 à 10 répétitions de 1 à 3 min rapides (RPE 8/10${paces.interval?`, env. ${paceText(paces.interval)}`:''}) avec récupération équivalente, puis 10 min faciles.`};
-  if(type==='racepace') return {...b,title:'Allure spécifique',detail:`15 min faciles, puis 2 à 4 blocs à l'allure objectif (RPE 6–7/10${paces.race?`, env. ${paceText(paces.race)}`:''}) avec récupération courte, puis retour au calme.`};
-  if(type==='strides') return {...b,title:'Endurance + lignes droites',detail:`${Math.max(20,m-8)} min faciles puis 4 à 6 accélérations souples de 15–20 s, récupération complète.`};
-  if(type==='race'){ const target=parseTimeString(profile.goalTime); return {...b,minutes:target?Math.max(20,Math.round(target/60)):Math.max(30,Math.round(profile.raceDistance*6)),title:`Jour J — ${profile.raceDistance} km`,detail:'Échauffement progressif, départ contrôlé, puis gestion de l’allure selon ton objectif. Interromps l’effort en cas de symptôme inhabituel.'}; }
-  return b;
-}
-
-const TRI_FORMATS={sprint:{label:'Sprint',swim:'750 m',bike:'20 km',run:'5 km',raceMinutes:90},standard:{label:'Standard',swim:'1,5 km',bike:'40 km',run:'10 km',raceMinutes:150},middle:{label:'70.3',swim:'1,9 km',bike:'90 km',run:'21,1 km',raceMinutes:360},long:{label:'Longue distance',swim:'3,8 km',bike:'180 km',run:'42,2 km',raceMinutes:720}};
-function makeTriSession(type,minutes,week,phase,paces,profile){
-  let discipline='Triathlon',intensity=['bikeIntervals','runTempo','brick'].includes(type)?'hard':'easy'; if(type.startsWith('swim'))discipline='Natation'; if(type.startsWith('bike'))discipline='Vélo'; if(type.startsWith('run'))discipline='Course'; if(type==='brick')discipline='Enchaînement';
-  const b=baseSession(type,minutes,week,phase,profile,discipline,intensity); const m=b.minutes;
-  if(type==='swimTechnique') return {...b,title:profile.poolAccess?'Natation — technique':'Technique natation à sec',detail:profile.poolAccess?`${m} min faciles : éducatifs, respiration, position et séries courtes propres. RPE 2–4/10.`:`${m} min de mobilité épaules/tronc et éducatifs à sec. Ce travail ne remplace pas la nage : prévois un accès à l’eau dès que possible.`};
-  if(type==='swimEndurance') return {...b,title:profile.poolAccess?'Natation — endurance':'Préparation natation hors bassin',detail:profile.poolAccess?`${m} min avec séries continues/modérées, technique maintenue sous fatigue, RPE 3–5/10.`:`${m} min de renforcement doux du haut du corps et mobilité. Pour préparer un triathlon, des séances de nage réelles restent nécessaires.`};
-  if(type==='swimRecovery') return {...b,title:'Natation récupération',detail:profile.poolAccess?`${m} min très faciles, priorité à la relâche et à la technique.`:`Mobilité très douce et récupération ; aucune intensité.`};
-  if(type==='bikeEndurance') return {...b,title:'Vélo — endurance',detail:profile.bikeAccess?`${m} min souples, cadence confortable, RPE 2–4/10.`:`${m} min de cardio sans impact disponible. Un vélo/home-trainer reste nécessaire pour une préparation spécifique.`};
-  if(type==='bikeIntervals') return {...b,title:'Vélo — intervalles',detail:profile.bikeAccess?`Échauffement puis 4 à 6 blocs soutenus de 4–8 min (RPE 7/10) séparés par récupération facile. Total ${m} min.`:`Remplace par cardio soutenu contrôlé sans impact. Travaille sur vélo dès que possible pour la spécificité.`};
-  if(type==='bikeLong') return {...b,title:'Vélo — sortie longue',detail:profile.bikeAccess?`${m} min à intensité facile à modérée, alimentation/hydratation testées progressivement.`:`Cardio continu facile. Ce remplacement ne reproduit pas les contraintes spécifiques du vélo.`};
-  if(type==='runEasy') return {...b,title:'Course — endurance',detail:`${m} min faciles, RPE 2–3/10${paces.easy?`, env. ${paceText(paces.easy)}`:''}.`};
-  if(type==='runTempo') return {...b,title:'Course — tempo',detail:`Échauffement puis blocs contrôlés RPE 6–7/10${paces.tempo?`, proche de ${paceText(paces.tempo)}`:''}. Total ${m} min.`};
-  if(type==='runLong') return {...b,title:'Course — sortie longue',detail:`${m} min en endurance, sans finir épuisé. Priorité à la régularité.`};
-  if(type==='brick') return {...b,title:'Enchaînement vélo → course',detail:`Environ ${Math.round(m*.68)} min de vélo facile/modéré puis ${Math.max(15,Math.round(m*.32))} min de course contrôlée. Objectif : habituer les jambes à la transition, pas chercher un record.`};
-  if(type==='triRace'){ const f=TRI_FORMATS[profile.triDistance]||TRI_FORMATS.standard; const target=parseTimeString(profile.goalTime); return {...b,discipline:'Course',intensity:'race',minutes:target?Math.round(target/60):f.raceMinutes,title:`Jour J — Triathlon ${f.label}`,detail:`Format prévu : ${f.swim} natation • ${f.bike} vélo • ${f.run} course. Départ contrôlé, transitions préparées, hydratation/alimentation déjà testées à l’entraînement.`}; }
-  return b;
-}
-
-const HYROX_STATIONS='SkiErg 1000 m → Sled Push 50 m → Sled Pull 50 m → Burpee Broad Jumps 80 m → Row 1000 m → Farmers Carry 200 m → Sandbag Lunges 100 m → 100 Wall Balls';
-function missingEquipment(profile){ const eq=profile.hyroxEquipment||[]; const names={skierg:'SkiErg',sled:'sled',rower:'rameur',kettlebells:'kettlebells',sandbag:'sandbag',wallball:'wall ball'}; return Object.keys(names).filter(k=>!eq.includes(k)).map(k=>names[k]); }
-function makeHyroxSession(type,minutes,week,phase,paces,profile){
-  const discipline=type.startsWith('run')?'Course':type==='strengthStations'?'Force':type==='recovery'?'Récupération':'HYROX'; const hard=['runIntervals','engine','compromised','simulation','strengthStations'].includes(type); const b=baseSession(type,minutes,week,phase,profile,discipline,hard?'hard':'easy'); const m=b.minutes; const missing=missingEquipment(profile);
-  const alt=missing.length?` Matériel absent (${missing.join(', ')}) : utilise une variante de même mouvement/intention sans chercher à reproduire exactement la station.`:'';
-  if(type==='runEasy') return {...b,title:'Course — endurance facile',detail:`${m} min faciles, RPE 2–3/10${paces.easy?`, env. ${paceText(paces.easy)}`:''}. Construis le moteur aérobie.`};
-  if(type==='runIntervals') return {...b,title:'Course — intervalles 1 km',detail:`Échauffement, puis répétitions de 800 m à 1 km à RPE 7–8/10 avec récupération contrôlée. Total ${m} min. Le but est de rester propre, pas de sprinter.`};
-  if(type==='strengthStations') return {...b,title:'Force & technique stations',detail:`Travail technique et force sur poussée/tirage, portés, fentes et wall balls, avec charges progressives adaptées à ton niveau et à ta division. Garde 2–3 répétitions en réserve.${alt}`};
-  if(type==='engine') return {...b,title:'Engine — ergos + course',detail:`Alternance cardio contrôlée : blocs course + SkiErg/rameur lorsque disponibles, RPE 6–7/10. Total ${m} min.${alt}`};
-  if(type==='compromised') return {...b,title:'Compromised running',detail:`Blocs courts de station fonctionnelle suivis immédiatement de course facile à modérée. Objectif : retrouver une foulée efficace sous fatigue, pas maximiser les charges.${alt}`};
-  if(type==='simulation') return {...b,title:'Simulation HYROX progressive',detail:`Simulation partielle à intensité contrôlée : 3 à 6 blocs de course + stations selon la phase. Ne réalise pas une course complète chaque semaine.${alt}`};
-  if(type==='recovery') return {...b,title:'Récupération active',detail:`${m} min très faciles : marche, vélo doux ou mobilité selon ce qui est totalement confortable.`};
-  if(type==='hyroxRace'){ const target=parseTimeString(profile.goalTime); return {...b,discipline:'Course',intensity:'race',minutes:target?Math.round(target/60):90,title:`Jour J — HYROX ${profile.hyroxDivision==='pro'?'Pro':profile.hyroxDivision==='doubles'?'Doubles':profile.hyroxDivision==='relay'?'Relay':'Open'}`,detail:`Format : 8 × 1 km de course, chacun suivi d’une station dans l’ordre officiel : ${HYROX_STATIONS}. Utilise les charges/règles officielles de ta division le jour de l’épreuve.`}; }
-  return b;
-}
-
-function generateRunningPlan(profile){
-  const today=startOfDay(new Date()), race=startOfDay(new Date(profile.raceDate+'T12:00:00')); const totalDays=Math.max(7,daysBetween(today,race)), totalWeeks=Math.ceil(totalDays/7); const paces=estimatePaces(profile), chosen=chooseTrainingDays(profile); const baseMinutes=clamp(Math.max(60,profile.weeklyKm*6),60,profile.sessionsPerWeek*profile.maxSessionMin); const out=[];
-  for(let i=0;i<=totalDays;i++){ const d=addDays(today,i); if(d>race)break; const week=Math.floor(i/7)+1; if(isoDate(d)===isoDate(race)){ const s=makeRunningSession('race',60,week,'race',paces,profile); out.push({...s,id:`s-${isoDate(d)}-race`,date:isoDate(d)}); break; } if(!chosen.includes(d.getDay()))continue; const phase=phaseForWeek(week,totalWeeks), factor=weekLoadFactor(week,totalWeeks,profile), weekly=Math.min(profile.sessionsPerWeek*profile.maxSessionMin,baseMinutes*factor), slot=chosen.indexOf(d.getDay()), last=chosen.length-1; let type='easy'; if(slot===last)type='long'; if(profile.sessionsPerWeek>=3&&slot===1&&phase!=='base')type=phase==='specific'?'racepace':'tempo'; if(profile.sessionsPerWeek>=4&&slot===2&&slot!==last&&phase==='build')type='interval'; if(profile.sessionsPerWeek>=5&&slot===0)type='recovery'; if(phase==='base'&&slot===1&&slot!==last)type=week%2===0?'strides':'easy'; if(phase==='taper'&&type==='interval')type='easy'; const shares={long:.34,tempo:.22,interval:.19,racepace:.24,easy:.20,recovery:.14,strides:.18}; let minutes=weekly*(shares[type]||.2); if(type==='long')minutes=Math.max(minutes,Math.min(profile.maxSessionMin,45+week*4)); if(profile.experience===0)minutes*=.82; const s=makeRunningSession(type,minutes,week,phase,paces,profile); out.push({...s,id:`s-${isoDate(d)}-${slot}`,date:isoDate(d)}); }
-  return out;
-}
-
-function triTemplate(count,phase,priority){
-  let arr=count<=3?['swimTechnique','bikeEndurance','brick']:count===4?['swimTechnique','bikeEndurance','runEasy','brick']:count===5?['swimTechnique','bikeIntervals','runEasy','swimEndurance','brick']:count===6?['swimTechnique','bikeIntervals','runEasy','swimEndurance','bikeLong','runLong']:['swimRecovery','swimTechnique','bikeIntervals','runEasy','swimEndurance','bikeLong','brick'];
-  if(phase==='base') arr=arr.map(x=>x==='bikeIntervals'?'bikeEndurance':x==='brick'?'runLong':x);
-  if(phase==='specific' && !arr.includes('brick')) arr[arr.length-1]='brick';
-  if(phase==='taper') arr=arr.map(x=>['bikeIntervals','runTempo'].includes(x)?(x==='bikeIntervals'?'bikeEndurance':'runEasy'):x);
-  if(priority==='swim'&&count>=5) arr[Math.max(0,arr.length-2)]='swimEndurance';
-  if(priority==='bike'&&count>=5) arr[Math.max(0,arr.length-2)]='bikeLong';
-  if(priority==='run'&&count>=5) arr[Math.max(0,arr.length-2)]='runTempo';
-  return arr;
-}
-function generateTriathlonPlan(profile){
-  const today=startOfDay(new Date()), race=startOfDay(new Date(profile.raceDate+'T12:00:00')); const totalDays=Math.max(7,daysBetween(today,race)), totalWeeks=Math.ceil(totalDays/7), chosen=chooseTrainingDays(profile), paces=estimatePaces(profile), out=[];
-  const baseTotal=clamp(profile.swimWeeklyM/35 + profile.bikeWeeklyHours*60 + profile.triRunWeeklyKm*6,150,profile.sessionsPerWeek*profile.maxSessionMin);
-  for(let i=0;i<=totalDays;i++){ const d=addDays(today,i); if(d>race)break; const week=Math.floor(i/7)+1; if(isoDate(d)===isoDate(race)){ const s=makeTriSession('triRace',120,week,'race',paces,profile); out.push({...s,id:`s-${isoDate(d)}-race`,date:isoDate(d)}); break; } if(!chosen.includes(d.getDay()))continue; const phase=phaseForWeek(week,totalWeeks), factor=weekLoadFactor(week,totalWeeks,profile), template=triTemplate(chosen.length,phase,profile.triPriority), slot=chosen.indexOf(d.getDay()), type=template[slot]||'runEasy'; let minutes=(baseTotal*factor)/chosen.length; if(['bikeLong','brick','runLong'].includes(type))minutes*=1.35; if(type.startsWith('swim'))minutes*=.82; if(profile.experience===0)minutes*=.85; const s=makeTriSession(type,minutes,week,phase,paces,profile); out.push({...s,id:`s-${isoDate(d)}-${slot}`,date:isoDate(d)}); }
-  return out;
-}
-
-function hyroxTemplate(count,phase,priority){
-  let arr=count<=3?['runEasy','strengthStations','compromised']:count===4?['runEasy','strengthStations','runIntervals','compromised']:count===5?['runEasy','strengthStations','runIntervals','engine','simulation']:['recovery','runEasy','strengthStations','runIntervals','engine','simulation'];
-  if(phase==='base')arr=arr.map(x=>x==='simulation'?'compromised':x==='engine'?'runEasy':x);
-  if(phase==='taper')arr=arr.map(x=>['simulation','strengthStations','runIntervals'].includes(x)?(x==='strengthStations'?'compromised':'runEasy'):x);
-  if(priority==='running'&&count>=4)arr[Math.max(0,arr.length-2)]='runIntervals';
-  if(priority==='strength'&&count>=4)arr[Math.max(0,arr.length-2)]='strengthStations';
-  if(priority==='engine'&&count>=4)arr[Math.max(0,arr.length-2)]='engine';
-  return arr;
-}
-function generateHyroxPlan(profile){
-  const today=startOfDay(new Date()), race=startOfDay(new Date(profile.raceDate+'T12:00:00')); const totalDays=Math.max(7,daysBetween(today,race)), totalWeeks=Math.ceil(totalDays/7), chosen=chooseTrainingDays(profile), paces=estimatePaces(profile), out=[]; const baseTotal=clamp(profile.hyroxWeeklyKm*6+profile.strengthSessions*45,150,profile.sessionsPerWeek*profile.maxSessionMin);
-  for(let i=0;i<=totalDays;i++){ const d=addDays(today,i); if(d>race)break; const week=Math.floor(i/7)+1; if(isoDate(d)===isoDate(race)){ const s=makeHyroxSession('hyroxRace',90,week,'race',paces,profile); out.push({...s,id:`s-${isoDate(d)}-race`,date:isoDate(d)}); break; } if(!chosen.includes(d.getDay()))continue; const phase=phaseForWeek(week,totalWeeks),factor=weekLoadFactor(week,totalWeeks,profile),template=hyroxTemplate(chosen.length,phase,profile.hyroxPriority),slot=chosen.indexOf(d.getDay()),type=template[slot]||'runEasy'; let minutes=(baseTotal*factor)/chosen.length; if(type==='simulation')minutes*=1.25; if(type==='recovery')minutes*=.65; if(profile.experience===0)minutes*=.85; const s=makeHyroxSession(type,minutes,week,phase,paces,profile); out.push({...s,id:`s-${isoDate(d)}-${slot}`,date:isoDate(d)}); }
-  return out;
-}
-function generatePlan(profile){ return profile.sport==='triathlon'?generateTriathlonPlan(profile):profile.sport==='hyrox'?generateHyroxPlan(profile):generateRunningPlan(profile); }
-
-function recomputeStatuses(){ const today=isoDate(new Date()); state.plan.forEach(s=>{ if(state.feedback[s.id])s.status=state.feedback[s.id].status; else if(s.date<today&&s.intensity!=='race')s.status='missed'; else s.status='planned'; }); }
-function eventTitle(p){ if(p.sport==='triathlon'){const f=TRI_FORMATS[p.triDistance]||TRI_FORMATS.standard;return`Triathlon ${f.label}`;} if(p.sport==='hyrox')return`HYROX ${p.hyroxDivision==='pro'?'Pro':p.hyroxDivision==='doubles'?'Doubles':p.hyroxDivision==='relay'?'Relay':'Open'}`; return `${p.raceDistance} km`; }
-function metricVolume(p){ if(p.sport==='triathlon')return{value:'3',label:'disciplines entraînées'}; if(p.sport==='hyrox')return{value:`${p.hyroxWeeklyKm} km`,label:'course au départ'}; return{value:`${p.weeklyKm} km`,label:'volume de départ'}; }
+$('questionnaire').onsubmit=async e=>{
+  e.preventDefault();$('formError').classList.add('hidden');
+  try{
+    const input=readProfile();
+    if(input.hasRedFlag){if(state){state.hold=true;persist();}screen('safety');return;}
+    if(input.startDate<E.localToday())throw new Error('La nouvelle preparation doit commencer aujourd\u2019hui ou plus tard.');
+    if(state&&!confirm('Le nouveau profil remplacera ce plan et ses bilans. Exporte une sauvegarde JSON avant si tu souhaites conserver cet historique. Continuer ?'))return;
+    $('generateBtn').disabled=true;$('generateBtn').textContent='Construction et verification...';
+    await new Promise(resolve=>setTimeout(resolve,30));
+    const result=E.generatePlan(input);
+    const next={schemaVersion:3,id:window.crypto?.randomUUID?.()||'local-'+Date.now(),profile:result.profile,feedback:{},hold:false,revision:1,createdAt:new Date().toISOString()};
+    state=next;baseResult=result;currentResult=E.adaptPlan(result.plan,{},result.profile);
+    persist();$('resumeBtn').classList.remove('hidden');renderDashboard();screen('dashboard');
+  }catch(error){$('formError').textContent=error.message;$('formError').classList.remove('hidden');$('formError').scrollIntoView({behavior:'smooth',block:'center'});}
+  finally{$('generateBtn').disabled=false;$('generateBtn').textContent='Generer et verifier le plan';}
+};
 function renderDashboard(){
-  if(!state.profile)return; recomputeStatuses(); const p=state.profile,race=new Date(p.raceDate+'T12:00:00'); $('dashboardSport').textContent=sportLabel(p.sport); $('dashboardTitle').textContent=`${eventTitle(p)} — ${fullDate(race)}`; $('dashboardSubtitle').textContent=`${p.sessionsPerWeek} séances/semaine • ${Math.max(0,daysBetween(new Date(),race))} jours jusqu'au jour J`;
-  const completed=state.plan.filter(s=>s.status==='done').length,missed=state.plan.filter(s=>s.status==='missed').length,thisWeek=Math.max(1,Math.floor(daysBetween(new Date(state.createdAt||new Date()),new Date())/7)+1),mv=metricVolume(p);
-  $('metrics').innerHTML=`<div class="card metric"><strong>${completed}</strong><span>séances terminées</span></div><div class="card metric"><strong>${missed}</strong><span>séances manquées</span></div><div class="card metric"><strong>${mv.value}</strong><span>${mv.label}</span></div><div class="card metric"><strong>S${thisWeek}</strong><span>semaine actuelle</span></div>`;
-  const notice=$('sportNotice'); notice.classList.remove('hidden');
-  if(p.sport==='triathlon') notice.innerHTML=`<strong>Triathlon :</strong> le moteur répartit natation, vélo, course et enchaînements. ${!p.poolAccess||!p.bikeAccess?'Ton profil signale un accès matériel incomplet : les alternatives proposées ne remplacent pas une pratique spécifique avant la compétition.':'Les séances sont pilotées surtout par durée et RPE pour rester utilisables sans capteurs.'}`;
-  else if(p.sport==='hyrox') notice.innerHTML=`<strong>HYROX :</strong> le plan combine course, force, stations et travail sous fatigue. Les charges d’entraînement doivent rester progressives et adaptées à ta technique ; vérifie les règles officielles de ta division avant l’épreuve.`;
-  else notice.classList.add('hidden');
-  renderNext(); renderWeekFilter(); renderPlan(); renderAdaptation(); updateNotificationUI(); saveState();
+  if(!state)return;
+  if(!baseResult||!currentResult)rebuild();
+  const p=state.profile,weeks=currentResult.weeks;
+  $('dashboardSport').textContent='Plan V3 - '+(state.hold?'SUSPENDU':'ebauche a reevaluer');
+  $('dashboardTitle').textContent=E.eventConfig(p).name;
+  $('dashboardSubtitle').textContent=`${fullDate(p.raceDate)} - ${p.sessionsPerWeek} creneaux demandes / semaine - J-${Math.max(0,E.daysBetween(E.localToday(),p.raceDate))}`;
+  const currentWeek=weeks.find(w=>E.localToday()>=w.start&&E.localToday()<=E.dateAdd(w.start,6))||weeks[0];
+  const completed=Object.values(state.feedback).filter(f=>f.status==='done').length;
+  $('metrics').innerHTML=[[hourText(currentWeek?.minutes||0),'volume de la semaine'],[String(currentWeek?.count||0),'seances cette semaine'],[String(completed),'bilans : seances faites'],[String(baseResult.weeks.length),'semaines, projections incluses']].map(([v,label])=>`<div class="metric card"><strong>${esc(v)}</strong><span>${esc(label)}</span></div>`).join('');
+  $('warningsList').innerHTML=baseResult.warnings.map(w=>`<div class="warning-item ${w.severity==='info'?'info':''}">${esc(w.message)}</div>`).join('');
+  const selected=$('weekFilter').value;
+  $('weekFilter').innerHTML=weeks.map(w=>`<option value="${w.index}">S${w.index} - ${esc(fmtDate(w.start))}</option>`).join('');
+  $('weekFilter').value=weeks.some(w=>String(w.index)===selected)?selected:currentWeek?.index||1;
+  $('adaptationState').innerHTML=`<p>${esc(currentResult.message)}</p>${state.hold?'<p class="error">Un calendrier deja exporte ne se met pas a jour : supprime ses anciennes seances pour ne plus recevoir leurs consignes.</p>':''}<p>Les seances non renseignees sont marquees "sans bilan", pas automatiquement "ratees". Une note libre n\u2019est pas interpretee.</p><p>Charge indicative = somme (minutes du bloc x effort estime). Ce n\u2019est ni un score de risque ni une mesure physiologique.</p>`;
+  renderTimeline();renderNext();renderPlan();updateNotifications();
 }
-function renderNext(){ const today=isoDate(new Date()); const next=state.plan.find(s=>s.status==='planned'&&s.date>=today)||state.plan.find(s=>s.status==='planned'); const el=$('nextSession'); if(!next){el.innerHTML='<p>Aucune séance à venir.</p>';return;} el.innerHTML=`<span class="session-tag">${phaseLabel(next.phase)}</span><h3>${next.title}</h3><p>${next.detail}</p><div class="session-meta"><span>📅 ${formatDate(next.date)}</span><span>⏱ ${next.minutes} min</span><span>${next.discipline}</span>${next.adapted?'<span>↻ adaptée</span>':''}</div><div class="session-actions">${next.intensity!=='race'?`<button class="btn primary" data-feedback="${next.id}">Faire le bilan</button>`:''}</div>`; const b=el.querySelector('[data-feedback]'); if(b)b.onclick=()=>openFeedback(next.id); }
-function renderWeekFilter(){ const weeks=[...new Set(state.plan.map(s=>s.week))]; const sel=$('weekFilter'); const current=Number(sel.value)||weeks[0]||1; sel.innerHTML=weeks.map(w=>`<option value="${w}" ${w===current?'selected':''}>Semaine ${w}</option>`).join(''); sel.onchange=renderPlan; }
-function renderPlan(){ const w=Number($('weekFilter').value||1),list=state.plan.filter(s=>s.week===w),container=$('planList'); if(!list.length){container.innerHTML='<div class="card mini"><p>Aucune séance cette semaine.</p></div>';return;} container.innerHTML=list.map(s=>`<div class="session-row ${s.status}"><div class="session-date"><strong>${formatDate(s.date).split(' ')[0]}</strong><span>${formatDate(s.date).replace(/^\S+\s/,'')}</span></div><div class="session-info"><strong><span class="discipline-pill">${s.discipline}</span>${s.title}</strong><span>${s.minutes} min • ${phaseLabel(s.phase)}${s.adapted?' • adaptée':''}</span></div><div><span class="status-pill ${s.status}">${s.status==='done'?'faite':s.status==='missed'?'ratée':'prévue'}</span>${s.intensity!=='race'?` <button class="btn ghost" data-feedback="${s.id}">Bilan</button>`:''}</div></div>`).join(''); container.querySelectorAll('[data-feedback]').forEach(b=>b.onclick=()=>openFeedback(b.dataset.feedback)); }
-
-function openFeedback(id){ const s=state.plan.find(x=>x.id===id); if(!s)return; $('feedbackSessionId').value=id; $('feedbackTitle').textContent=s.title; const f=state.feedback[id]; $('feedbackStatus').value=f?.status||'done'; $('feedbackDifficulty').value=f?.difficulty||3; $('feedbackFatigue').value=f?.fatigue||3; $('feedbackPain').checked=!!f?.pain; $('feedbackNote').value=f?.note||''; $('feedbackDialog').showModal(); }
-$('feedbackForm').addEventListener('submit',(e)=>{ if(e.submitter&&e.submitter.value==='cancel')return; e.preventDefault(); const id=$('feedbackSessionId').value; state.feedback[id]={status:$('feedbackStatus').value,difficulty:Number($('feedbackDifficulty').value),fatigue:Number($('feedbackFatigue').value),pain:$('feedbackPain').checked,note:$('feedbackNote').value.trim(),at:new Date().toISOString()}; adaptPlanFromFeedback(id,state.feedback[id]); saveState(); $('feedbackDialog').close(); renderDashboard(); toast('Bilan enregistré. Le plan a été réévalué.'); });
-function recoveryReplacement(s,kind){
-  const p=state.profile; if(kind==='pain')return{...s,type:'rest',discipline:'Récupération',intensity:'easy',title:'Repos / récupération',minutes:20,detail:'Pas d’intensité. Repos ou mobilité très douce uniquement si totalement indolore. Si la douleur persiste, s’aggrave ou modifie ton mouvement, demande un avis professionnel avant de reprendre.'};
-  const paces=estimatePaces(p); if(p.sport==='triathlon')return{...makeTriSession(p.poolAccess?'swimRecovery':'runEasy',Math.max(20,s.minutes*.65),s.week,s.phase,paces,p),id:s.id,date:s.date,adapted:true};
-  if(p.sport==='hyrox')return{...makeHyroxSession('recovery',Math.max(20,s.minutes*.65),s.week,s.phase,paces,p),id:s.id,date:s.date,adapted:true};
-  return{...makeRunningSession('recovery',Math.max(20,s.minutes*.65),s.week,s.phase,paces,p),id:s.id,date:s.date,adapted:true};
+function renderTimeline(){
+  const weeks=currentResult.weeks,max=Math.max(1,...weeks.map(w=>w.minutes));
+  $('phaseLegend').innerHTML='<span>Vert : entrainement</span><span>Gris : allegee</span><span>Bleu : affutage</span>';
+  $('timeline').innerHTML=weeks.map(w=>`<button data-week="${w.index}" data-phase="${esc(w.phase)}" style="height:${Math.max(4,Math.round(w.minutes/max*100))}%" title="S${w.index} - ${esc(E.PHASES[w.phase])} - ${hourText(w.minutes)}" aria-label="Semaine ${w.index}, ${w.minutes} minutes" aria-current="${Number($('weekFilter').value)===w.index}"></button>`).join('');
+  $('timeline').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('weekFilter').value=b.dataset.week;renderPlan();renderTimeline();});
 }
-function adaptPlanFromFeedback(id,f){
-  const session=state.plan.find(s=>s.id===id); if(!session)return; const baseDate=new Date(session.date+'T12:00:00'); let kind='stable',message='Aucun changement important nécessaire.';
-  if(f.pain){kind='pain';message='Douleur inhabituelle signalée : les séances exigeantes des 7 prochains jours sont neutralisées. Le moteur ne cherche pas à diagnostiquer la cause.';}
-  else if(f.fatigue>=5||f.difficulty>=5){kind='highfatigue';message='Fatigue/difficulté très élevée : charge réduite d’environ 25 % sur les 5 prochains jours et intensité supprimée temporairement.';}
-  else if(f.fatigue>=4||f.difficulty>=4){kind='fatigue';message='Fatigue élevée : charge réduite d’environ 15 % sur les 4 prochains jours.';}
-  else if(f.status==='missed'){kind='missed';message='Séance ratée : elle n’est pas rattrapée. Le plan continue sans ajouter de charge.';}
-  else if(f.difficulty<=2&&f.fatigue<=2){kind='fresh';message='Séance facile et fatigue basse : progression maintenue sans augmentation brutale.';}
-  state.adaptations.push({id:'a'+Date.now(),date:new Date().toISOString(),kind,message,source:id}); if(['stable','missed','fresh'].includes(kind))return;
-  const horizon=kind==='pain'?7:kind==='highfatigue'?5:4,reduction=kind==='pain'?.35:kind==='highfatigue'?.25:.15;
-  state.plan.forEach((s,idx)=>{ const d=new Date(s.date+'T12:00:00'),delta=daysBetween(baseDate,d); if(delta<=0||delta>horizon||s.intensity==='race'||s.status==='done')return; if(kind==='pain'||(kind==='highfatigue'&&s.intensity==='hard')){ state.plan[idx]=recoveryReplacement(s,kind); state.plan[idx].adapted=true; } else { s.minutes=Math.max(20,Math.round(s.minutes*(1-reduction))); s.adapted=true; } });
+function summaryHTML(s){return `<span class="session-tag">${esc(E.PHASES[s.phase])}${s.provisional?' - projection':''}</span><h3>${esc(s.title)}</h3><div class="session-meta"><span>${esc(fmtDate(s.date))}</span><span>${s.kind==='race'?'Horaire a confirmer':s.kind==='paused'?'Suspendu':esc(E.timeText(s.durationSec))}</span>${s.swimMeters?`<span>${s.swimMeters} m</span>`:''}</div>`;}
+function buttonsHTML(s){const eligible=s.kind==='training'&&s.date<=E.localToday();return `<button class="btn secondary" data-session="${esc(s.id)}">Voir les blocs</button>${eligible?`<button class="btn primary" data-feedback="${esc(s.id)}">Faire le bilan</button>`:''}`;}
+function bindSessionButtons(el){el.querySelectorAll('[data-session]').forEach(b=>b.onclick=()=>openSession(b.dataset.session));el.querySelectorAll('[data-feedback]').forEach(b=>b.onclick=()=>openFeedback(b.dataset.feedback));}
+function renderNext(){
+  const s=currentResult.plan.find(s=>s.date>=E.localToday()&&!['done','missed'].includes(s.status));
+  if(!s){$('nextSession').innerHTML='<p>Aucune seance future. Cree une nouvelle preparation apres un bilan.</p>';return;}
+  const preview=s.kind==='paused'?s.detail:s.kind==='race'?s.detail:`${s.blocks.length} blocs calcules. Duree et recuperations incluses${s.adapted?' ; contenu recalcule':''}.`;
+  $('nextSession').innerHTML=summaryHTML(s)+`<p class="session-preview">${esc(preview)}</p><div class="session-actions">${buttonsHTML(s)}</div>`;bindSessionButtons($('nextSession'));
 }
-function renderAdaptation(){ const last=[...state.adaptations].reverse()[0],box=$('adaptationState'); if(!last){box.innerHTML='<p>Le plan suit sa progression initiale. Fais un bilan après chaque séance pour l’adapter.</p>';return;} const cls=['pain','highfatigue'].includes(last.kind)?'danger':last.kind==='fatigue'?'warn':''; box.innerHTML=`<div class="coach-note ${cls}"><strong>${last.kind==='pain'?'Douleur signalée':last.kind.includes('fatigue')?'Charge ajustée':'Plan réévalué'}</strong><span>${last.message}</span></div>`; }
-
-$('resetBtn').onclick=()=>{ if(confirm('Supprimer le profil, le plan et tous les bilans enregistrés sur cet appareil ?')){localStorage.removeItem(STORAGE_KEY);state=emptyState();refreshResume();showScreen('welcome');toast('Données locales supprimées.');} };
-async function requestNotifications(){ if(!('Notification'in window)){toast('Les notifications ne sont pas prises en charge par ce navigateur.');return;} const perm=await Notification.requestPermission(); updateNotificationUI(); if(perm==='granted'){toast('Notifications activées.');maybeNotifyToday(true);}else toast('Permission de notification non accordée.'); }
-$('notifBtn').onclick=requestNotifications; $('bannerNotifBtn').onclick=requestNotifications;
-function updateNotificationUI(){ const supported='Notification'in window,granted=supported&&Notification.permission==='granted'; $('notifBtn').textContent=granted?'Notifications activées':'Activer les notifications'; $('notificationBanner').classList.toggle('hidden',granted||!state.profile); }
-function maybeNotifyToday(force=false){ if(!state.profile||!('Notification'in window)||Notification.permission!=='granted')return; const today=isoDate(new Date()),s=state.plan.find(x=>x.date===today&&x.status==='planned'&&x.intensity!=='race'); if(!s)return; const [h,m]=(state.profile.reminderTime||'18:30').split(':').map(Number),now=new Date(),key=`runprep_notified_${today}_${s.id}`; if(localStorage.getItem(key)&&!force)return; if(force||now.getHours()>h||(now.getHours()===h&&now.getMinutes()>=m)){const body=`${s.title} — ${s.minutes} min. Ouvre RunPrep pour le détail.`; if(navigator.serviceWorker?.controller)navigator.serviceWorker.ready.then(reg=>reg.showNotification('Séance RunPrep',{body,icon:'icons/icon.svg',badge:'icons/icon.svg',tag:key})); else new Notification('Séance RunPrep',{body}); localStorage.setItem(key,'1');} }
-setInterval(()=>maybeNotifyToday(false),60000); setTimeout(()=>maybeNotifyToday(false),1500);
-
-$('calendarExportBtn').onclick=()=>{ if(!state.profile)return; const [rh,rm]=(state.profile.reminderTime||'18:30').split(':').map(Number),pad2=n=>String(n).padStart(2,'0'),esc=s=>String(s).replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;'),lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//RunPrep MultiSport//FR','CALSCALE:GREGORIAN','METHOD:PUBLISH']; state.plan.forEach(s=>{const d=new Date(s.date+'T12:00:00'),start=`${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}T${pad2(rh)}${pad2(rm)}00`,endDate=new Date(d);endDate.setHours(rh,rm+Math.max(15,s.minutes),0,0);const end=`${endDate.getFullYear()}${pad2(endDate.getMonth()+1)}${pad2(endDate.getDate())}T${pad2(endDate.getHours())}${pad2(endDate.getMinutes())}00`;lines.push('BEGIN:VEVENT',`UID:${s.id}@runprep.local`,`DTSTART:${start}`,`DTEND:${end}`,`SUMMARY:${esc('RunPrep — '+s.title)}`,`DESCRIPTION:${esc(s.detail)}`,'BEGIN:VALARM','TRIGGER:-PT30M','ACTION:DISPLAY',`DESCRIPTION:${esc('Séance dans 30 minutes : '+s.title)}`,'END:VALARM','END:VEVENT');}); lines.push('END:VCALENDAR'); const blob=new Blob([lines.join('\r\n')],{type:'text/calendar;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='runprep-multisport-calendrier.ics';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Calendrier exporté avec rappels 30 min avant.'); };
-
-window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredInstallPrompt=e;$('installBtn').classList.remove('hidden');});
-$('installBtn').onclick=async()=>{if(!deferredInstallPrompt)return;deferredInstallPrompt.prompt();await deferredInstallPrompt.userChoice;deferredInstallPrompt=null;$('installBtn').classList.add('hidden');};
-if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
-updateSportUI(); updateNotificationUI();
+function renderPlan(){
+  const wi=Number($('weekFilter').value),week=currentResult.weeks.find(w=>w.index===wi);if(!week)return;
+  $('weekSummary').textContent=`${E.PHASES[week.phase]} - ${hourText(week.minutes)} | Course ${week.runMinutes} min | Velo ${week.bikeMinutes} min | Nage ${week.swimMeters} m | Force/mobilite ${week.strengthMinutes} min. Efforts >= 6/10 : ${week.hardMinutes} min. Indice de charge estime : ${week.load}.`;
+  const rows=[];
+  for(let i=0;i<7;i++){
+    const date=E.dateAdd(week.start,i);if(date<state.profile.startDate||date>state.profile.raceDate)continue;
+    const s=currentResult.plan.find(s=>s.date===date);
+    if(!s){rows.push(`<div class="session-row rest-row"><div class="session-date"><strong>${DAY_NAMES[E.weekday(date)].slice(0,3)}</strong><span>${esc(fmtDate(date))}</span></div><div class="session-info"><strong>Repos / aucune seance programmee</strong><span>Pas de rattrapage automatique.</span></div></div>`);continue;}
+    const status={done:'faite',missed:'ratee',unlogged:'sans bilan',paused:'suspendue',planned:s.provisional?'projection':'prevue'}[s.status]||'prevue';
+    rows.push(`<div class="session-row ${esc(s.status)}"><div class="session-date"><strong>${DAY_NAMES[E.weekday(date)].slice(0,3)}</strong><span>${esc(fmtDate(date))}</span></div><div class="session-info"><strong>${esc(s.title)}</strong><span>${s.kind==='race'?'Jour J - horaire non defini':esc(E.timeText(s.durationSec))}${s.swimMeters?' - '+s.swimMeters+' m':''}${s.adapted?' - adaptee':''}</span><span class="status-pill ${esc(s.status)}">${esc(status)}</span></div><div class="row-actions">${buttonsHTML(s)}</div></div>`);
+  }
+  $('planList').innerHTML=rows.join('');bindSessionButtons($('planList'));
+}
+$('weekFilter').onchange=()=>{renderPlan();renderTimeline();};
+function openSession(id){
+  const s=currentResult.plan.find(s=>s.id===id);if(!s)return;$('sessionTitle').textContent=s.title;
+  $('sessionContent').innerHTML=`<p>${esc(fmtDate(s.date))} - ${s.kind==='race'?'Journee de competition':esc(E.timeText(s.durationSec))}${s.swimMeters?' - '+s.swimMeters+' m':''}</p>`+
+    (s.blocks.length?`<div class="block-list">${s.blocks.map(b=>`<div class="workout-block"><strong>${esc(E.timeText(b.seconds))}</strong><span>${esc(b.label)}<small>Effort ${b.rpe}/10${b.distanceM?' - '+b.distanceM+' m':''}</small></span></div>`).join('')}</div>`:'')+
+    `<details ${s.blocks.length?'':'open'}><summary>Consignes completes / contenu exporte</summary><div class="session-notes">${esc(s.detail)}</div></details><p class="helper">RPE = effort ressenti de 1 (tres facile) a 10 (maximal). Pas d\u2019effort maximal prescrit.</p>`;
+  $('sessionDialog').showModal();
+}
+function openFeedback(id){
+  const s=currentResult.plan.find(s=>s.id===id);if(!s||s.date>E.localToday()||s.kind!=='training')return;
+  const f=state.feedback[id];$('feedbackSessionId').value=id;$('feedbackTitle').textContent=s.title;
+  $('feedbackStatus').value=f?.status||'done';$('actualMinutes').value=f?.actualMinutes??Math.round(s.minutes);
+  $('feedbackDifficulty').value=f?.difficulty||3;$('feedbackFatigue').value=f?.fatigue||3;$('feedbackPain').checked=!!f?.pain;$('feedbackIllness').checked=!!f?.illness;$('feedbackNote').value=f?.note||'';$('feedbackDialog').showModal();
+}
+$('feedbackStatus').onchange=()=>{if($('feedbackStatus').value==='missed')$('actualMinutes').value=0;};
+$('feedbackForm').onsubmit=e=>{
+  e.preventDefault();const id=$('feedbackSessionId').value,source=baseResult.plan.find(s=>s.id===id);if(!source||source.date>E.localToday())return;
+  const status=$('feedbackStatus').value,actual=status==='missed'?0:Number($('actualMinutes').value);
+  if(status==='done'&&actual<=0){toast('Renseigne le temps effectif ou choisis "ratee".');return;}
+  state.feedback[id]={status,actualMinutes:actual,difficulty:Number($('feedbackDifficulty').value),fatigue:Number($('feedbackFatigue').value),pain:$('feedbackPain').checked,illness:$('feedbackIllness').checked,note:$('feedbackNote').value.trim().slice(0,1000),at:new Date().toISOString()};
+  if(state.feedback[id].pain||state.feedback[id].illness)state.hold=true;
+  state.revision++;persist();rebuild();$('feedbackDialog').close();renderDashboard();toast(state.hold?'Plan suspendu. Aucune reprise automatique.':'Bilan enregistre. Les blocs ont ete reevalues.');
+};
+$('pauseBtn').onclick=()=>{if(!state)return;if(confirm('Suspendre les prochaines seances et le jour J ? La reprise necessitera de revoir ton profil, pas une date automatique.')){state.hold=true;state.revision++;persist();rebuild();renderDashboard();}};
+$('backupBtn').onclick=()=>{if(state)download(JSON.stringify({...state,exportedAt:new Date().toISOString()},null,2),'runprep-v3-sauvegarde-privee.json','application/json;charset=utf-8');};
+$('calendarExportBtn').onclick=()=>{
+  if(!state)return;
+  if(!confirm('Le calendrier importe ne se synchronise pas ensuite. Importe dans un calendrier RunPrep separe ; apres une adaptation, supprime l\u2019ancien calendrier avant de reimporter pour eviter les doublons. Les rappels dependent des reglages de ton agenda. Continuer ?'))return;
+  const content=C.exportICS(currentResult.plan,state.profile,{namespace:state.id,revision:state.revision});download(content,'runprep-v3-calendrier.ics','text/calendar;charset=utf-8');toast('Calendrier exporte. Les seances suspendues ne sont pas incluses.');
+};
+$('resetBtn').onclick=()=>{if(!confirm('Effacer profil et bilans RunPrep de ce navigateur, y compris les anciennes versions ? Cette action ne supprime pas les evenements deja importes dans ton agenda.'))return;
+  try{for(const k of [STORAGE_KEY,OLD_KEY,'runprep_v1'])localStorage.removeItem(k);}catch{}
+  state=null;baseResult=null;currentResult=null;legacy=null;$('resumeBtn').classList.add('hidden');$('migrationBanner').classList.add('hidden');screen('welcome');};
+function validateSaved(data){
+  if(data?.schemaVersion!==3||!data.profile)throw new Error('Fichier non reconnu : une sauvegarde JSON V3 est necessaire.');
+  const profile=E.normalizeProfile(data.profile),result=E.generatePlan(profile),ids=new Set(result.plan.map(s=>s.id)),feedback={};
+  for(const [id,f] of Object.entries(data.feedback||{})){
+    if(!ids.has(id))continue;
+    if(!['done','missed'].includes(f.status)||![1,2,3,4,5].includes(f.difficulty)||![1,2,3,4,5].includes(f.fatigue))throw new Error('Bilan invalide dans la sauvegarde.');
+    if(!Number.isFinite(f.actualMinutes)||f.actualMinutes<0||f.actualMinutes>600)throw new Error('Duree effective invalide dans la sauvegarde.');
+    feedback[id]={status:f.status,actualMinutes:f.actualMinutes,difficulty:f.difficulty,fatigue:f.fatigue,pain:!!f.pain,illness:!!f.illness,note:String(f.note||'').slice(0,1000),at:typeof f.at==='string'?f.at:''};
+  }
+  return {schemaVersion:3,id:String(data.id||'local-'+Date.now()).replace(/[^a-zA-Z0-9-]/g,'').slice(0,80),profile,feedback,hold:!!data.hold,revision:Number.isInteger(data.revision)?Math.max(0,data.revision):0,createdAt:data.createdAt||new Date().toISOString()};
+}
+$('importBtn').onclick=()=>$('importFile').click();
+$('importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2000000)throw new Error('Sauvegarde trop volumineuse (limite 2 Mo).');const validated=validateSaved(JSON.parse(await file.text()));if(state&&!confirm('Remplacer les donnees locales par cette sauvegarde ?'))return;state=validated;persist();rebuild();$('resumeBtn').classList.remove('hidden');renderDashboard();screen('dashboard');}catch(error){toast('Import refuse : '+error.message);}finally{e.target.value='';}};
+$('migrateBtn').onclick=()=>{populate(legacy.profile);toast('V2 : renseigne les volumes en minutes et reconfirme le format des chronos.');screen('questionnaire');};
+$('resumeBtn').onclick=()=>{rebuild();renderDashboard();screen('dashboard');};
+async function requestNotifications(){
+  if(!window.isSecureContext||!('Notification' in window)){toast('Notifications indisponibles ici. Sur iPhone compatible : installer sur l\u2019ecran d\u2019accueil, puis ouvrir l\u2019app. Sinon utiliser le calendrier.');return;}
+  if(Notification.permission==='denied'){toast('Autorisation bloquee : modifier les reglages de ce site dans le navigateur.');return;}
+  try{await Notification.requestPermission();updateNotifications();toast(Notification.permission==='granted'?'Autorisation accordee. Rappels dans l\u2019app active uniquement.':'Autorisation non accordee.');}catch{toast('La demande n\u2019a pas abouti. Utilise le calendrier.');}
+}
+function updateNotifications(){
+  const granted='Notification' in window&&Notification.permission==='granted';
+  $('notifBtn').textContent=granted?'Notifications autorisees':'Activer les notifications';
+  $('notificationTitle').textContent=granted?'Notifications autorisees - app active uniquement':'Pense a activer les notifications';
+  $('bannerNotifBtn').classList.toggle('hidden',granted);
+}
+$('notifBtn').onclick=requestNotifications;$('bannerNotifBtn').onclick=requestNotifications;
+async function maybeNotify(){
+  if(!state||state.hold||!currentResult||!('Notification' in window)||Notification.permission!=='granted')return;
+  const today=E.localToday(),s=currentResult.plan.find(s=>s.date===today&&s.kind==='training'&&s.status==='planned');if(!s)return;
+  const due=new Date(today+'T'+state.profile.reminderTime+':00'),delta=(due-Date.now())/60000;
+  if(delta<0||delta>30)return;
+  const key='runprep_v3_notified_'+s.id;try{if(localStorage.getItem(key))return;}catch{}
+  try{const reg=await navigator.serviceWorker?.getRegistration();const options={body:s.title+' - '+E.timeText(s.durationSec),icon:'icons/icon-192.png',tag:s.id};if(reg)await reg.showNotification('Seance RunPrep dans moins de 30 minutes',options);else new Notification('Seance RunPrep',options);try{localStorage.setItem(key,'1');}catch{}}
+  catch{/* Browser may disallow notifications; do not pretend delivery succeeded. */}
+}
+setInterval(maybeNotify,60000);
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;$('installBtn').classList.remove('hidden');});
+$('installBtn').onclick=async()=>{if(deferredInstallPrompt){await deferredInstallPrompt.prompt();deferredInstallPrompt=null;$('installBtn').classList.add('hidden');}};
+if('serviceWorker' in navigator&&window.isSecureContext){window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});reg.update();}catch{toast('Mode hors ligne indisponible. Le site reste utilisable en ligne.');}});}
+try{const saved=localStorage.getItem(STORAGE_KEY);if(saved){state=validateSaved(JSON.parse(saved));$('resumeBtn').classList.remove('hidden');}else{legacy=JSON.parse(localStorage.getItem(OLD_KEY)||'null');if(legacy?.profile)$('migrationBanner').classList.remove('hidden');}}
+catch(error){toast('Donnees locales non chargees : '+error.message+'. Elles n\u2019ont pas ete effacees.');}
+sportUI();updateNotifications();

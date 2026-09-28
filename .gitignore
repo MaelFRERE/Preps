@@ -1,2 +1,11 @@
 .DS_Store
 Thumbs.db
+node_modules/
+*.log
+*.ics
+*sauvegarde*.json
+*backup*.json
+.env
+.env.*
+__pycache__/
+tests-output/
