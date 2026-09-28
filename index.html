@@ -1,62 +1,167 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b0d10"><meta name="description" content="Planificateur sportif experimental, gratuit et local. Course, triathlon, HYROX.">
-<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icons/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=3.0.0"><title>RunPrep V3 - Planification multisport</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1320">
+<title>TriPrep</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="app">
-<header class="topbar"><div class="brand"><div class="brand-mark">R</div><div><strong>RunPrep</strong><span>MultiSport V3 &middot; prototype</span></div></div><div class="top-actions"><button id="installBtn" class="btn secondary hidden">Installer</button><button id="notifBtn" class="btn secondary">Activer les notifications</button></div></header>
+<div class="app-shell">
+<header class="topbar">
+  <div><span class="brand-dot"></span><strong>TriPrep</strong></div>
+  <button id="notifBtn" class="link-btn">Notifications</button>
+</header>
+
 <main>
-<section id="screenWelcome" class="screen active">
-<div id="migrationBanner" class="notification-banner hidden"><div><strong>Un ancien profil V2 a &eacute;t&eacute; trouv&eacute;.</strong><span>Le plan V2 ne sera pas r&eacute;utilis&eacute;. Tes anciennes donn&eacute;es restent conserv&eacute;es : v&eacute;rifie tes volumes r&eacute;cents avant de g&eacute;n&eacute;rer la V3.</span></div><button id="migrateBtn" class="btn primary">Revoir mon profil</button></div>
-<div class="hero card"><div><span class="eyebrow">Sans API &middot; sans compte &middot; donn&eacute;es locales</span><h1>Un plan.<br>Pas au hasard.</h1><p>Des s&eacute;ances construites bloc par bloc, une charge li&eacute;e &agrave; ta pratique r&eacute;cente et des contraintes visibles. Course, triathlon et HYROX.</p><div class="hero-actions"><button id="startBtn" class="btn primary large">Cr&eacute;er ma pr&eacute;paration</button><button id="resumeBtn" class="btn secondary large hidden">Reprendre mon plan</button><button id="importBtn" class="btn ghost">Importer une sauvegarde V3</button><input id="importFile" type="file" accept="application/json,.json" hidden></div></div><div class="hero-stats"><div><strong>0 &euro;</strong><span>Aucune API payante</span></div><div><strong>3 sports</strong><span>Un moteur, des contraintes distinctes</span></div><div><strong>V3</strong><span>Prototype &agrave; faire relire, non valid&eacute; cliniquement</span></div></div></div>
-<div class="grid3"><button class="card mini sport-home" data-start-sport="running"><span class="sport-icon">RUN</span><h3>Course &agrave; pied</h3><p>De 5 km au marathon, sans d&eacute;duire ton niveau de ton objectif.</p></button><button class="card mini sport-home" data-start-sport="triathlon"><span class="sport-icon">TRI</span><h3>Triathlon</h3><p>Budgets natation, v&eacute;lo et course s&eacute;par&eacute;s. Cr&eacute;neau long d&eacute;di&eacute;.</p></button><button class="card mini sport-home" data-start-sport="hyrox"><span class="sport-icon">HYX</span><h3>HYROX</h3><p>Technique, course et circuits partiels adapt&eacute;s au mat&eacute;riel.</p></button></div>
-<p class="disclaimer">Ce prototype n'est ni un entra&icirc;neur dipl&ocirc;m&eacute; ni un dispositif m&eacute;dical. Un calendrier complet ne prouve pas qu'une pr&eacute;paration est suffisante. Les projections doivent &ecirc;tre r&eacute;&eacute;valu&eacute;es.</p>
+<section id="setupScreen" class="screen active">
+  <div class="hero">
+    <span class="eyebrow">Préparation triathlon personnelle</span>
+    <h1>Ton plan, sans surcharge.</h1>
+    <p>Tu renseignes seulement ce qui est utile. Ensuite l’app te montre ta semaine et le détail de chaque séance.</p>
+  </div>
+
+  <form id="setupForm" class="form-stack">
+    <div class="card">
+      <h2>1. Ton objectif</h2>
+      <div class="grid2">
+        <label>Format
+          <select id="triDistance">
+            <option value="sprint">Sprint</option>
+            <option value="standard">Distance olympique</option>
+            <option value="middle" selected>70.3</option>
+            <option value="long">Longue distance</option>
+          </select>
+        </label>
+        <label>Date de la course
+          <input id="raceDate" type="date" required>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2. Ce que tu fais déjà</h2>
+      <p class="hint">Le plan doit partir de ton niveau actuel, pas d’une durée arbitraire.</p>
+      <div class="grid2">
+        <label>Course à pied par semaine (min)
+          <input id="runWeeklyMin" type="number" min="0" max="1200" value="90" required>
+        </label>
+        <label>Plus longue course récente (min)
+          <input id="recentLongRunMin" type="number" min="0" max="300" value="60" required>
+        </label>
+        <label>Vélo par semaine (heures)
+          <input id="bikeWeeklyHours" type="number" min="0" max="30" step="0.25" value="3" required>
+        </label>
+        <label>Plus longue sortie vélo récente (min)
+          <input id="recentLongBikeMin" type="number" min="0" max="300" value="120" required>
+        </label>
+        <label>Natation par semaine (m)
+          <input id="swimWeeklyM" type="number" min="0" max="50000" step="100" value="3000" required>
+        </label>
+        <label>Allure natation /100 m <span>(optionnel)</span>
+          <input id="swimPace" type="text" inputmode="numeric" placeholder="02:05">
+        </label>
+        <label>Temps récent sur 5 km <span>(optionnel)</span>
+          <input id="time5k" type="text" inputmode="numeric" placeholder="25:30">
+        </label>
+        <label>Allure facile course <span>(optionnel)</span>
+          <input id="easyPace" type="text" inputmode="numeric" placeholder="06:15">
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. Tes disponibilités</h2>
+      <label>Nombre de séances par semaine
+        <select id="sessionsPerWeek">
+          <option value="4">4</option>
+          <option value="5" selected>5</option>
+          <option value="6">6</option>
+        </select>
+      </label>
+      <div id="dayPicker" class="day-picker"></div>
+      <div class="grid2">
+        <label>Durée habituelle max (min)
+          <input id="maxSessionMin" type="number" min="30" max="180" value="75" required>
+        </label>
+        <label>Créneau long max (min)
+          <input id="longSessionMin" type="number" min="60" max="300" value="180" required>
+        </label>
+        <label>Jour du créneau long
+          <select id="longDay"></select>
+        </label>
+        <label>Temps total max / semaine (h)
+          <input id="weeklyHoursCap" type="number" min="2" max="30" step="0.5" value="8" required>
+        </label>
+      </div>
+      <details>
+        <summary>Réglages optionnels</summary>
+        <div class="grid2 details-grid">
+          <label>Course normale max (min)<input id="maxRunMin" type="number" value="75" min="30" max="180"></label>
+          <label>Vélo normal max (min)<input id="maxBikeMin" type="number" value="120" min="30" max="240"></label>
+          <label>Natation max (min)<input id="maxSwimMin" type="number" value="75" min="30" max="120"></label>
+          <label>Sommeil moyen
+            <select id="sleepHours"><option value="6">6–7 h</option><option value="7" selected>7–8 h</option><option value="8">8 h ou +</option></select>
+          </label>
+          <label>Stress actuel
+            <select id="stress"><option value="1">Faible</option><option value="2" selected>Modéré</option><option value="3">Élevé</option></select>
+          </label>
+          <label>Heure habituelle des séances<input id="reminderTime" type="time" value="18:30"></label>
+        </div>
+      </details>
+    </div>
+
+    <div class="card safety-card">
+      <h2>4. Sécurité</h2>
+      <p class="hint">TriPrep ne remplace pas un professionnel de santé ou un entraîneur.</p>
+      <label class="check"><input id="redFlag" type="checkbox"> J’ai actuellement une douleur importante, une maladie aiguë, un malaise inexpliqué ou une restriction médicale d’activité.</label>
+      <label class="check"><input id="adultConfirmed" type="checkbox" required> J’ai 18 ans ou plus.</label>
+    </div>
+
+    <p id="formError" class="error hidden"></p>
+    <button class="primary big" type="submit">Créer ma préparation triathlon</button>
+  </form>
 </section>
-<section id="screenQuestionnaire" class="screen">
-<div class="section-head"><div><span class="eyebrow">01 / Profil et contraintes</span><h2>Partir de ta r&eacute;alit&eacute;.</h2></div><button class="btn ghost" data-go="welcome">Retour</button></div>
-<form id="questionnaire" class="form-grid">
-<div class="card form-section full"><h3>Le sport et l'objectif</h3><div class="sport-picker"><label><input type="radio" name="sport" value="running" checked><span>Course &agrave; pied</span></label><label><input type="radio" name="sport" value="triathlon"><span>Triathlon</span></label><label><input type="radio" name="sport" value="hyrox"><span>HYROX</span></label></div>
-<div class="fields two common-goal-fields">
-<label class="for-running">Distance sur route (km)<select id="raceDistance"><option value="5">5</option><option value="10" selected>10</option><option value="21.0975">Semi-marathon</option><option value="42.195">Marathon</option></select></label>
-<label class="for-triathlon hidden">Format<select id="triDistance"><option value="sprint">Sprint - 750 m / 20 km / 5 km</option><option value="standard" selected>Standard - 1,5 km / 40 km / 10 km</option><option value="middle">70.3 - 1,9 km / 90 km / 21,1 km</option><option value="long">Long - 3,8 km / 180 km / 42,2 km (relecture indispensable)</option></select></label>
-<label class="for-hyrox hidden">Division<select id="hyroxDivision"><option value="open">Individual Open</option><option value="pro">Individual Pro - pr&eacute;paration g&eacute;n&eacute;rale seulement</option><option value="doubles">Doubles - partage non personnalis&eacute;</option><option value="relay">Relay - r&ocirc;les non personnalis&eacute;s</option></select></label>
-<label>Objectif<select id="goalType"><option value="finish">Finir</option><option value="improve">Progresser</option><option value="time">Chrono cible (non garanti)</option></select></label>
-<label>Date de d&eacute;but<input id="startDate" type="date" required></label><label>Date de la comp&eacute;tition<input id="raceDate" type="date" required></label>
-<label id="goalTimeWrap" class="hidden">Chrono souhait&eacute; (mm:ss ou hh:mm:ss)<input id="goalTime" placeholder="Ex. 05:30:00" maxlength="12"><small>Il ne d&eacute;termine pas tes allures d'entra&icirc;nement.</small></label></div></div>
-<div class="card form-section"><h3>Pratique r&eacute;elle des 4 derni&egrave;res semaines</h3><p class="helper">Une moyenne r&eacute;cente, pas le volume que tu aimerais faire. Minutes de course : pauses/marche comprises si tu d&eacute;butes.</p><div class="fields">
-<label>Exp&eacute;rience r&eacute;guli&egrave;re<select id="experience"><option value="0">Je d&eacute;bute / je reprends</option><option value="1">Moins de 6 mois</option><option value="2" selected>6 &agrave; 24 mois</option><option value="3">Plus de 2 ans</option></select></label>
-<label>Course actuelle (min par semaine)<input id="runWeeklyMin" type="number" min="0" max="1200" value="120" required></label><label>Plus longue course r&eacute;cente (min)<input id="recentLongRunMin" type="number" min="0" max="300" value="45" required></label>
-<label>Allure facile observ&eacute;e /km (facultatif)<input id="easyPace" placeholder="06:30 = 6 min 30 par km" maxlength="8"></label><label>Chrono r&eacute;cent sur 5 km (facultatif)<input id="time5k" placeholder="25:30 ou 00:25:30" maxlength="12"></label>
-<label class="for-running">Chrono r&eacute;cent sur 10 km (facultatif)<input id="time10k" placeholder="52:00 ou 00:52:00" maxlength="12"></label>
-<div class="for-triathlon fields hidden"><label>Natation actuelle (m / semaine)<input id="swimWeeklyM" type="number" min="0" max="50000" step="25" value="1500"></label><label>Allure habituelle /100 m (facultatif)<input id="swimPace" placeholder="02:30" maxlength="8"><small>Sert &agrave; estimer la dur&eacute;e des s&eacute;ries, pas &agrave; imposer une vitesse.</small></label><label>V&eacute;lo actuel (h / semaine)<input id="bikeWeeklyHours" type="number" min="0" max="30" step="0.25" value="2"></label><label>Plus longue sortie v&eacute;lo r&eacute;cente (min)<input id="recentLongBikeMin" type="number" min="0" max="300" value="75"></label><label class="checkbox-line"><input id="poolAccess" type="checkbox" checked> Acc&egrave;s &agrave; un bassin ou lieu de nage adapt&eacute; et surveill&eacute;</label><label class="checkbox-line"><input id="bikeAccess" type="checkbox" checked> Acc&egrave;s &agrave; un v&eacute;lo ou home-trainer</label></div>
-<div class="for-hyrox fields hidden"><label>Renforcement actuel (s&eacute;ances / semaine)<input id="strengthSessions" type="number" min="0" max="7" value="2"></label><label>Dur&eacute;e habituelle du renforcement (min)<input id="recentStrengthMin" type="number" min="10" max="150" value="40"></label></div>
-</div></div>
-<div class="card form-section"><h3>Temps disponible</h3><div class="fields"><label>Cr&eacute;neaux par semaine<select id="sessionsPerWeek"><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option></select></label><fieldset><legend>Jours disponibles</legend><div id="dayPicker" class="day-picker"></div></fieldset>
-<label>Dur&eacute;e maximale d'un cr&eacute;neau ordinaire (min)<input id="maxSessionMin" type="number" min="15" max="300" value="60" required></label><div class="fields two"><label>Jour du cr&eacute;neau long<select id="longDay"></select></label><label>Dur&eacute;e maximale (min)<input id="longSessionMin" type="number" min="15" max="300" value="90" required></label></div><label>Plafond total d'entra&icirc;nement (h / semaine)<input id="weeklyHoursCap" type="number" min="0.5" max="30" step="0.25" value="6" required><small>Temps disponible pour RunPrep, apr&egrave;s tes autres activit&eacute;s.</small></label><label>Heure habituelle<input id="reminderTime" type="time" value="18:30" required></label>
-<details><summary>Limites par discipline et par jour</summary><div class="fields two detail-fields"><label>Course ordinaire (min max)<input id="maxRunMin" type="number" min="15" max="300" value="60"></label><label>V&eacute;lo ordinaire (min max)<input id="maxBikeMin" type="number" min="15" max="300" value="90"></label><label>Natation (min max)<input id="maxSwimMin" type="number" min="15" max="300" value="60"></label><label>Force / stations (min max)<input id="maxStrengthMin" type="number" min="15" max="300" value="60"></label></div><p class="helper">Le cr&eacute;neau long peut d&eacute;passer les limites ordinaires de course/v&eacute;lo. La natation reste plafonn&eacute;e s&eacute;par&eacute;ment.</p><div id="dayCaps" class="fields two"></div></details>
-<fieldset class="for-triathlon hidden"><legend>Jours possibles pour nager</legend><div id="poolDayPicker" class="day-picker"></div><p class="helper">Au moins un jour commun avec tes disponibilit&eacute;s.</p></fieldset>
-</div></div>
-<div class="card form-section full for-hyrox hidden"><h3>Mat&eacute;riel disponible</h3><div id="equipmentPicker" class="equipment-grid"></div><p class="helper">Pas de charges de comp&eacute;tition prescrites automatiquement. Les variantes ne remplacent pas une pratique sp&eacute;cifique des stations.</p></div>
-<div class="card form-section full"><h3>R&eacute;cup&eacute;ration</h3><div class="fields two"><label>Sommeil moyen<select id="sleepHours"><option value="5">Moins de 6 h</option><option value="6">6 &agrave; 7 h</option><option value="7" selected>7 &agrave; 8 h</option><option value="8">Plus de 8 h</option></select></label><label>Stress actuel<select id="stress"><option value="1">Faible</option><option value="2" selected>Mod&eacute;r&eacute;</option><option value="3">&Eacute;lev&eacute;</option></select></label></div></div>
-<div class="card form-section full safety-card"><h3>V&eacute;rification de s&eacute;curit&eacute;</h3><p class="helper">Pas de diagnostic ni de feu vert m&eacute;dical automatique. Une r&eacute;ponse coch&eacute;e ci-dessous suspend la g&eacute;n&eacute;ration.</p><div class="safety-grid"><label><input type="checkbox" class="redflag"> Douleur / pression thoracique &agrave; l'effort</label><label><input type="checkbox" class="redflag"> Malaise ou perte de connaissance inexpliqu&eacute;e</label><label><input type="checkbox" class="redflag"> Restriction d'activit&eacute; ou maladie n&eacute;cessitant un suivi adapt&eacute;</label><label><input type="checkbox" class="redflag"> Essoufflement inhabituel au repos ou &agrave; faible effort</label><label><input type="checkbox" class="redflag"> Douleur / blessure qui modifie mon mouvement</label><label><input type="checkbox" class="redflag"> Maladie aigu&euml;, fi&egrave;vre ou consigne m&eacute;dicale de repos</label></div><label class="checkbox-line"><input id="adultConfirmed" type="checkbox" required> J'ai 18 ans ou plus. Ce prototype n'est pas adapt&eacute; aux mineurs.</label><label class="checkbox-line"><input id="acceptSafety" type="checkbox" required> Je comprends les limites de ce plan et j'interromps l'effort en cas de sympt&ocirc;me inhabituel.</label><p class="helper">Douleur thoracique brutale/intense, difficult&eacute; respiratoire importante ou malaise en cours : ne pas attendre le plan, appeler les secours (15 / 112 en France).</p></div>
-<div class="full form-submit"><p id="formError" class="error hidden" role="alert"></p><button id="generateBtn" class="btn primary large" type="submit">G&eacute;n&eacute;rer et v&eacute;rifier le plan</button></div>
-</form></section>
-<section id="screenSafety" class="screen"><div class="card safety-stop"><div class="stop-icon">!</div><h2>La g&eacute;n&eacute;ration est suspendue.</h2><p>Un signal d'alerte a &eacute;t&eacute; d&eacute;clar&eacute;. Ce moteur ne peut pas d&eacute;terminer si tu peux t'entra&icirc;ner. Demande un avis adapt&eacute; avant la reprise.</p><p>Une urgence en cours n&eacute;cessite les secours, pas un questionnaire : 15 / 112 en France.</p><button class="btn secondary" data-go="questionnaire">Revoir les informations</button></div></section>
-<section id="screenDashboard" class="screen"><div class="dashboard-head"><div><span class="eyebrow" id="dashboardSport"></span><h2 id="dashboardTitle"></h2><p id="dashboardSubtitle"></p></div><div class="top-actions"><button id="calendarExportBtn" class="btn secondary">Exporter calendrier</button><button id="backupBtn" class="btn secondary">Sauvegarde JSON</button><button id="editProfileBtn" class="btn secondary">Revoir le profil</button><button id="resetBtn" class="btn ghost danger">Effacer</button></div></div>
-<div id="notificationBanner" class="notification-banner"><div><strong id="notificationTitle">Pense &agrave; activer les notifications</strong><span id="notificationText">Rappels uniquement pendant l'utilisation de l'app. Pour des rappels hors de l'app, exporte vers ton calendrier et v&eacute;rifie ses autorisations.</span></div><button id="bannerNotifBtn" class="btn primary">Activer</button></div>
-<details id="warningsPanel" class="card warnings" open><summary>V&eacute;rifications et limites du plan</summary><div id="warningsList"></div></details>
-<div id="metrics" class="metrics"></div><div class="card load-overview"><div class="section-head compact"><h3>Vue d'ensemble de la pr&eacute;paration</h3><span>Volume pr&eacute;vu, hors comp&eacute;tition</span></div><div id="phaseLegend"></div><div id="timeline" aria-label="Volume par semaine"></div><p class="helper">La partie au-del&agrave; de 14 jours reste provisoire. Les semaines all&eacute;g&eacute;es et l'aff&ucirc;tage sont visibles ici.</p></div>
-<div class="dashboard-grid"><div><div class="section-head compact"><div><span class="eyebrow">Prochaine &eacute;tape</span><h3>Prochaine s&eacute;ance</h3></div></div><div id="nextSession" class="card next-session"></div><div class="section-head compact spaced"><h3>Le programme en d&eacute;tail</h3><select id="weekFilter" aria-label="Choisir la semaine"></select></div><div id="weekSummary" class="sport-notice"></div><div id="planList" class="plan-list"></div></div><aside><div class="card coach-card"><span class="eyebrow">Retour d'entra&icirc;nement</span><h3>Adaptation</h3><div id="adaptationState"></div><button id="pauseBtn" class="btn secondary">Suspendre le plan</button></div><div class="card privacy-card"><span class="eyebrow">Sur cet appareil</span><h3>Pas de compte, pas de serveur de donn&eacute;es</h3><p>Profil et bilans restent dans le navigateur. Une sauvegarde JSON contient des informations personnelles : ne la publie pas sur GitHub.</p><p>Les notes libres sont conserv&eacute;es, mais ne sont pas interpr&eacute;t&eacute;es par une IA.</p><p><a href="METHODE.md" target="_blank" rel="noopener">M&eacute;thode, r&eacute;f&eacute;rences et limites</a></p></div></aside></div>
+
+<section id="dashboardScreen" class="screen">
+  <div class="dashboard-title">
+    <div><span class="eyebrow" id="raceTypeLabel"></span><h1 id="raceTitle">Ma préparation</h1><p id="raceMeta"></p></div>
+    <button id="editBtn" class="secondary">Modifier</button>
+  </div>
+
+  <div id="warningBox" class="warning-box hidden"></div>
+
+  <section class="week-block">
+    <div class="week-head">
+      <div><span class="eyebrow">Cette semaine</span><h2 id="weekTitle"></h2></div>
+      <select id="weekSelect" aria-label="Choisir une semaine"></select>
+    </div>
+    <div id="weekSummary" class="week-summary"></div>
+    <div id="sessionList" class="session-list"></div>
+  </section>
+
+  <div class="bottom-actions">
+    <button id="calendarBtn" class="secondary">Exporter vers mon calendrier</button>
+    <button id="resetBtn" class="ghost">Recommencer</button>
+  </div>
 </section>
 </main>
-<dialog id="sessionDialog"><div class="dialog-head"><div><span class="eyebrow">D&eacute;roul&eacute; de la s&eacute;ance</span><h3 id="sessionTitle"></h3></div><button class="icon-btn" data-close="sessionDialog" aria-label="Fermer">&times;</button></div><div id="sessionContent"></div><button class="btn secondary" data-close="sessionDialog">Fermer</button></dialog>
-<dialog id="feedbackDialog"><form id="feedbackForm"><input id="feedbackSessionId" type="hidden"><div class="dialog-head"><div><span class="eyebrow">Apr&egrave;s la s&eacute;ance</span><h3 id="feedbackTitle"></h3></div><button type="button" class="icon-btn" data-close="feedbackDialog" aria-label="Fermer">&times;</button></div><div class="fields"><label>Statut<select id="feedbackStatus"><option value="done">Faite (m&ecirc;me partiellement)</option><option value="missed">Rat&eacute;e</option></select></label><label>Temps r&eacute;alis&eacute; (min)<input id="actualMinutes" type="number" min="0" max="600" step="0.5" required></label><label>Difficult&eacute;<select id="feedbackDifficulty"><option value="1">Tr&egrave;s facile</option><option value="2">Facile</option><option value="3" selected>Comme pr&eacute;vu</option><option value="4">Difficile</option><option value="5">Tr&egrave;s difficile</option></select></label><label>Fatigue actuelle<select id="feedbackFatigue"><option value="1">Tr&egrave;s faible</option><option value="2">Faible</option><option value="3" selected>Habituelle</option><option value="4">&Eacute;lev&eacute;e</option><option value="5">Tr&egrave;s &eacute;lev&eacute;e</option></select></label><label class="checkbox-line"><input id="feedbackPain" type="checkbox"> Douleur inhabituelle / mouvement modifi&eacute;</label><label class="checkbox-line"><input id="feedbackIllness" type="checkbox"> Maladie actuelle, fi&egrave;vre ou consigne de repos</label><label>Note priv&eacute;e (pas d'analyse automatique)<textarea id="feedbackNote" maxlength="1000" rows="3"></textarea></label></div><div class="dialog-actions"><button type="button" class="btn secondary" data-close="feedbackDialog">Annuler</button><button type="submit" class="btn primary">Enregistrer et r&eacute;&eacute;valuer</button></div></form></dialog>
-<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+<dialog id="sessionDialog">
+  <button class="close" id="closeSession">×</button>
+  <span class="eyebrow" id="sessionDate"></span>
+  <h2 id="sessionTitle"></h2>
+  <p id="sessionIntro"></p>
+  <div id="sessionBlocks" class="blocks"></div>
+  <p id="sessionDetail" class="session-detail"></p>
+</dialog>
+
+<div id="toast" class="toast hidden"></div>
 </div>
-<noscript><p>JavaScript est n&eacute;cessaire pour calculer ce plan localement.</p></noscript>
-<script src="engine.js?v=3.0.0"></script><script src="calendar.js?v=3.0.0"></script><script src="app.js?v=3.0.0"></script>
-</body></html>
+<script src="engine.js"></script>
+<script src="calendar.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
