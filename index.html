@@ -1,84 +1,10 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TriPlan 70.3</title>
-<link rel="stylesheet" href="styles.css">
-</head>
-<body>
-<div class="app">
-<header>
-  <div class="brand"><h1>TriPlan 70.3</h1><p>Prépa septembre 2027 · semaine par semaine · progression contrôlée</p></div>
-  <div class="tabs">
-    <button class="tab active" data-screen="week">Ma semaine</button>
-    <button class="tab" data-screen="details">Progression</button>
-    <button class="tab" data-screen="plan">Planifier</button>
-  </div>
-</header>
-
-<section id="week" class="screen active">
-  <div class="toolbar">
-    <button class="btn" id="prevWeek">←</button>
-    <div class="weektitle" id="weekTitle"></div>
-    <button class="btn" id="nextWeek">→</button>
-  </div>
-  <div class="grid" id="weekGrid"></div>
-  <div class="panel" style="margin-top:14px">
-    <div class="hint"><strong>Règle d’adaptation :</strong> si tu notes une séance « facile », la prochaine séance du <strong>même sport</strong> reçoit automatiquement <strong>+5 % de volume</strong>. « Normal » et « difficile » ne modifient pas la séance suivante.</div>
-  </div>
-</section>
-
-<section id="details" class="screen">
-  <div class="stats">
-    <div class="stat"><div class="v" id="statDone">0</div><div class="k">Séances terminées</div></div>
-    <div class="stat"><div class="v" id="statMinutes">0 min</div><div class="k">Volume réalisé</div></div>
-    <div class="stat"><div class="v" id="statEasy">0%</div><div class="k">Séances faciles</div></div>
-    <div class="stat"><div class="v" id="statStreak">0</div><div class="k">Semaines actives</div></div>
-  </div>
-  <div class="panel" style="margin-top:14px">
-    <h2>Volume hebdomadaire</h2>
-    <canvas id="volumeChart" width="1000" height="320"></canvas>
-  </div>
-  <div class="panel">
-    <h2>Suivi vers l’objectif</h2>
-    <div class="goal"><div><strong>70.3 · septembre 2027</strong><div class="note">Objectif de travail : finir, avec cible ~5h30–6h</div></div><div class="progress"><div class="bar" id="goalBar"></div></div><div id="goalPct">0%</div></div>
-    <p class="hint">L’indicateur combine simplement la régularité et l’avancement dans le plan. Ce n’est pas une prédiction de chrono.</p>
-  </div>
-</section>
-
-<section id="plan" class="screen">
-  <div class="panel">
-    <h2>Ajouter une séance</h2>
-    <div class="formgrid">
-      <div><label>Date</label><input id="fDate" type="date"></div>
-      <div><label>Sport</label><select id="fSport"><option>Course</option><option>Natation</option><option>Vélo</option><option>Renforcement</option></select></div>
-      <div><label>Durée (min)</label><input id="fDuration" type="number" min="10" value="60"></div>
-      <div><label>Distance prévue (facultatif)</label><input id="fDistance" type="number" step="0.1" placeholder="km ou m selon la séance"></div>
-      <div class="full"><label>Titre</label><input id="fTitle" placeholder="Ex. Sortie vélo avec Paul"></div>
-      <div class="full"><label>Détails</label><textarea id="fNotes" placeholder="Objectif, allure, blocs, lieu, etc."></textarea></div>
-      <div class="full"><button class="btn primary" id="addSession">Ajouter au planning</button></div>
-    </div>
-  </div>
-  <div class="panel">
-    <h2>Prochaines séances</h2>
-    <p class="hint">Cette liste garde les séances futures accessibles sans les mettre en avant dans ta vue principale.</p>
-    <div class="future-list" id="futureList"></div>
-  </div>
-</section>
-</div>
-
-<div class="modal" id="feedbackModal">
-  <div class="modalbox">
-    <h3 id="modalTitle">Retour séance</h3>
-    <label>Comment c’était ?</label>
-    <select id="mRating"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option></select>
-    <label style="margin-top:12px">Commentaire rapide (facultatif)</label>
-    <textarea id="mComment" placeholder="Jambes, souffle, douleur, énergie…"></textarea>
-    <div class="modal-actions"><button class="btn" id="cancelModal">Annuler</button><button class="btn primary" id="saveFeedback">Enregistrer</button></div>
-  </div>
-</div>
-
-<script src="app.js"></script>
-</body>
-</html>
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TriPlan 70.3</title><link rel="stylesheet" href="styles.css"></head><body>
+<div class="app"><header><div><h1>TriPlan 70.3</h1><p>Prépa complète · 12 oct. 2026 → sept. 2027</p></div>
+<nav><button class="tab active" data-view="week">Ma semaine</button><button class="tab" data-view="progress">Progression</button><button class="tab" data-view="plan">Plan complet</button></nav></header>
+<section id="week" class="view active"><div class="toolbar"><button id="prev">←</button><b id="weekTitle"></b><button id="next">→</button></div><div id="weekBadge"></div><div id="weekGrid" class="grid"></div>
+<div class="panel"><b>Règle d’adaptation :</b> « Facile » = +5 % sur la prochaine séance du même sport. Aucun +5 % pendant une semaine deload. « Normal » et « Difficile » ne changent rien.</div></section>
+<section id="progress" class="view"><div class="stats"><div><strong id="sDone">0</strong><span>Séances terminées</span></div><div><strong id="sMin">0</strong><span>Minutes réalisées</span></div><div><strong id="sEasy">0%</strong><span>Faciles</span></div><div><strong id="sWeeks">0</strong><span>Semaines actives</span></div></div><div class="panel"><h2>Volume hebdomadaire</h2><canvas id="chart" width="1000" height="320"></canvas></div></section>
+<section id="plan" class="view"><div class="panel"><h2>Plan annuel</h2><div class="filters"><select id="phaseFilter"><option value="">Toutes les phases</option></select><select id="sportFilter"><option value="">Tous les sports</option><option>Course</option><option>Natation</option><option>Vélo</option><option>Brick</option></select></div><div id="planList"></div></div></section></div>
+<div class="modal" id="modal"><div class="box"><h3 id="mTitle"></h3><label>Comment c’était ?</label><select id="mRate"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option></select><label>Commentaire</label><textarea id="mComment"></textarea><div class="actions"><button id="cancel">Annuler</button><button id="save">Enregistrer</button></div></div></div>
+<script src="app.js"></script></body></html>
