@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: triplan-pwa
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: triplan-db
+          property: connectionString
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: mailto:admin@example.com
+      - key: TZ
+        value: Europe/Paris
+
+  - type: cron
+    name: triplan-reminders
+    env: node
+    schedule: "*/15 * * * *"
+    buildCommand: npm install
+    startCommand: npm run cron
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: triplan-db
+          property: connectionString
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: mailto:admin@example.com
+      - key: TZ
+        value: Europe/Paris
+
+databases:
+  - name: triplan-db
+    plan: free
