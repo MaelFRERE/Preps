@@ -31,6 +31,7 @@ La date exacte de la course n’étant pas encore fixée, septembre 2027 est tra
 - Si plusieurs séances sont faites le même jour et qu'au moins une est notée Difficile, la journée devient rouge.
 
 
-## Thème v4
-- Fond général noir.
-- Accents violet / rose conservés.
+## Direction artistique v5
+- Interface sobre sur fond blanc / gris très clair.
+- Accent violet discret.
+- Vert pour les journées faciles/normales terminées, rouge pour les journées difficiles.
