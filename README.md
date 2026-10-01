@@ -29,3 +29,8 @@ La date exacte de la course n’étant pas encore fixée, septembre 2027 est tra
 - Facile ou Normal : journée verte avec opacité réduite.
 - Difficile : journée rouge avec opacité réduite.
 - Si plusieurs séances sont faites le même jour et qu'au moins une est notée Difficile, la journée devient rouge.
+
+
+## Thème v4
+- Fond général noir.
+- Accents violet / rose conservés.
