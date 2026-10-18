@@ -1,10 +1,123 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TriPlan 70.3</title><link rel="stylesheet" href="styles.css"></head><body>
-<div class="app"><header><div><h1>TriPlan 70.3</h1><p>Prépa complète · 12 oct. 2026 → sept. 2027</p></div>
-<nav><button class="tab active" data-view="week">Ma semaine</button><button class="tab" data-view="progress">Progression</button><button class="tab" data-view="plan">Plan complet</button></nav></header>
-<section id="week" class="view active"><div class="toolbar"><button id="prev">←</button><b id="weekTitle"></b><button id="next">→</button></div><div id="weekBadge"></div><div id="weekGrid" class="grid"></div>
-<div class="panel"><b>Règle d’adaptation :</b> « Facile » = +5 % sur la prochaine séance du même sport. Aucun +5 % pendant une semaine deload. « Normal » et « Difficile » ne changent rien.</div></section>
-<section id="progress" class="view"><div class="stats"><div><strong id="sDone">0</strong><span>Séances terminées</span></div><div><strong id="sMin">0</strong><span>Minutes réalisées</span></div><div><strong id="sEasy">0%</strong><span>Faciles</span></div><div><strong id="sWeeks">0</strong><span>Semaines actives</span></div></div><div class="panel"><h2>Volume hebdomadaire</h2><canvas id="chart" width="1000" height="320"></canvas></div></section>
-<section id="plan" class="view"><div class="panel"><h2>Plan annuel</h2><div class="filters"><select id="phaseFilter"><option value="">Toutes les phases</option></select><select id="sportFilter"><option value="">Tous les sports</option><option>Course</option><option>Natation</option><option>Vélo</option><option>Brick</option></select></div><div id="planList"></div></div></section></div>
-<div class="modal" id="modal"><div class="box"><h3 id="mTitle"></h3><label>Comment c’était ?</label><select id="mRate"><option value="easy">Facile</option><option value="normal">Normal</option><option value="hard">Difficile</option></select><label>Commentaire</label><textarea id="mComment"></textarea><div class="actions"><button id="cancel">Annuler</button><button id="save">Enregistrer</button></div></div></div>
-<script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Votre plan triathlon, une semaine a la fois.">
+  <title>TriPlan &middot; Mon entra&icirc;nement</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=7.0.0">
+  <script src="plan.js?v=7.0.0" defer></script>
+  <script src="model.js?v=7.0.0" defer></script>
+  <script src="app.js?v=7.0.0" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Aller au planning</a>
+  <div class="app">
+    <header class="header">
+      <a class="brand" href="#week" aria-label="TriPlan, ma semaine">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 28 28"><path d="M5 21 14 6l9 15M10 15h8"/></svg></span>
+        <span><strong>TriPlan</strong><small>Un jour apr&egrave;s l'autre.</small></span>
+      </a>
+      <div class="header-right"><span class="goal-caption">OBJECTIF &middot; SEPTEMBRE 2027</span><button id="dataButton" class="icon-btn" aria-label="Sauvegarde et donn&eacute;es" title="Sauvegarde et donn&eacute;es"></button></div>
+    </header>
+    <nav class="main-nav" aria-label="Navigation principale">
+      <button class="tab active" data-view="week" aria-current="page"><span data-icon="calendar"></span>Ma semaine</button>
+      <button class="tab" data-view="progress"><span data-icon="chart"></span>Progression</button>
+      <button class="tab" data-view="plan"><span data-icon="list"></span>Plan complet</button>
+    </nav>
+    <div id="storageAlert" class="notice warning" hidden role="alert"></div>
+    <main id="main">
+      <section id="week" class="view" aria-labelledby="weekHeading">
+        <div class="section-heading">
+          <div><p class="eyebrow">LE PLAN, &Agrave; VOTRE RYTHME</p><h1 id="weekHeading">Votre semaine</h1></div>
+          <button id="addButton" class="btn primary"><span data-icon="plus"></span>Ajouter une s&eacute;ance</button>
+        </div>
+        <div class="week-controls">
+          <div class="week-selector"><button id="prev" class="icon-btn" aria-label="Semaine pr&eacute;c&eacute;dente"></button><h2 id="weekTitle" tabindex="-1"></h2><button id="next" class="icon-btn" aria-label="Semaine suivante"></button></div>
+          <button id="todayButton" class="btn subtle">Cette semaine</button>
+        </div>
+        <div class="week-overview">
+          <div id="weekBadge"></div><div id="weekCount" class="overview-count"></div>
+          <div class="week-meter" role="progressbar" aria-label="S&eacute;ances de la semaine trait&eacute;es" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="weekBar"></span></div>
+        </div>
+        <p id="dragHelp" class="help">D&eacute;placez une s&eacute;ance avec sa poign&eacute;e, ou utilisez &laquo; D&eacute;placer &raquo;.</p>
+        <div id="weekRibbon" class="week-ribbon" aria-label="Jours et destinations de d&eacute;placement"></div>
+        <div id="weekGrid" class="week-grid"></div>
+        <details class="rules"><summary>Les r&egrave;gles de votre plan</summary><p>3 semaines de progression, puis 1 semaine all&eacute;g&eacute;e. Le v&eacute;lo ou l'encha&icirc;nement du samedi reste programm&eacute; une semaine sur deux. Vous pouvez d&eacute;placer ou ajouter vos propres s&eacute;ances.</p><p>Une premi&egrave;re validation &laquo; Termin&eacute;e &raquo; et &laquo; Facile &raquo; augmente de 10 % la prochaine s&eacute;ance du m&ecirc;me sport. Aucune augmentation si la s&eacute;ance source ou cible appartient &agrave; un deload. &laquo; Normal &raquo; et &laquo; Difficile &raquo; ne changent pas la suivante. Une s&eacute;ance &eacute;court&eacute;e ou non faite n'augmente pas la suivante et ne cr&eacute;e aucun rattrapage. Corriger un bilan ne d&eacute;clenche pas une seconde augmentation.</p><p>La semaine suivante s'affiche quand toutes les s&eacute;ances ont &eacute;t&eacute; trait&eacute;es : termin&eacute;es, &eacute;court&eacute;es, non faites ou report&eacute;es hors de la semaine. Un report d&eacute;place la m&ecirc;me s&eacute;ance, sans copie.</p><p>La date de course reste &agrave; pr&eacute;ciser. Le plan annuel existant est conserv&eacute; ; l'aff&ucirc;tage devra &ecirc;tre recal&eacute; sur cette date.</p></details>
+      </section>
+      <section id="progress" class="view" hidden aria-labelledby="progressHeading">
+        <div class="section-heading"><div><p class="eyebrow">LES CHIFFRES DE VOS S&Eacute;ANCES</p><h1 id="progressHeading">Votre progression</h1></div><div><label class="sr-only" for="statsPeriod">P&eacute;riode</label><select id="statsPeriod"><option value="all">Depuis le d&eacute;but</option><option value="8">8 derni&egrave;res semaines</option><option value="4">4 derni&egrave;res semaines</option><option value="week">Semaine affich&eacute;e</option></select></div></div>
+        <div class="filter-chips" id="statsSports" aria-label="Filtrer les statistiques par sport"></div>
+        <div id="statsSummary" class="stats-summary"></div>
+        <div id="sportStats" class="sport-stats"></div>
+        <section class="panel chart-panel" aria-labelledby="chartTitle"><div class="panel-heading"><div><h2 id="chartTitle">Volume hebdomadaire</h2><p>Dur&eacute;es r&eacute;alis&eacute;es et renseign&eacute;es, en heures.</p></div><div id="chartLegend" class="chart-legend"></div></div><div id="chartArea"></div><details class="chart-table"><summary>Voir les valeurs du graphique</summary><div id="chartTable"></div></details></section>
+        <p id="statsFootnote" class="help"></p>
+        <section class="panel"><div class="panel-heading"><div><h2>Derniers bilans</h2><p>Retrouvez ou compl&eacute;tez vos chiffres.</p></div></div><div id="historyList"></div></section>
+      </section>
+      <section id="plan" class="view" hidden aria-labelledby="planHeading">
+        <div class="section-heading"><div><p class="eyebrow">ANTICIPER SANS TOUT AFFICHER</p><h1 id="planHeading">Le plan complet</h1></div><button id="addFromPlan" class="btn primary"><span data-icon="plus"></span>Ajouter une s&eacute;ance</button></div>
+        <div class="plan-filters"><div><label for="monthFilter">Mois</label><select id="monthFilter"></select></div><div><label for="sportFilter">Sport</label><select id="sportFilter"><option value="">Tous les sports</option><option value="Course">Course &agrave; pied</option><option value="Natation">Natation</option><option value="V&eacute;lo">V&eacute;lo</option><option value="Brick">V&eacute;lo + course</option></select></div><div><label for="phaseFilter">Phase</label><select id="phaseFilter"><option value="">Toutes les phases</option></select></div></div>
+        <div id="planList"></div>
+      </section>
+    </main>
+    <footer class="footer"><span>TriPlan <b>v7.0</b> &middot; Donn&eacute;es sur cet appareil</span><button id="exportFooter" class="text-btn">Exporter ma sauvegarde</button></footer>
+  </div>
+  <dialog id="editorDialog" class="dialog" aria-labelledby="editorTitle">
+    <form id="editorForm" novalidate>
+      <header class="dialog-header"><div><p class="eyebrow">VOTRE PLANNING</p><h2 id="editorTitle">Ajouter une s&eacute;ance</h2></div><button type="button" class="icon-btn close-dialog" aria-label="Fermer"></button></header>
+      <div class="dialog-content form-grid">
+        <div class="field"><label for="editDate">Date</label><input id="editDate" type="date" required min="2000-01-01" max="2100-12-31"></div>
+        <div class="field"><label for="editSport">Sport</label><select id="editSport"><option value="Course">Course &agrave; pied</option><option value="Natation">Natation</option><option value="V&eacute;lo">V&eacute;lo</option><option value="Brick">V&eacute;lo + course</option></select></div>
+        <div class="field full"><label for="editTitle">Nom de la s&eacute;ance</label><input id="editTitle" type="text" maxlength="160" placeholder="Ex. Sortie avec des amis" required></div>
+        <div class="field"><label for="editDuration">Dur&eacute;e pr&eacute;vue (min)</label><input id="editDuration" type="text" inputmode="decimal" placeholder="60" required></div>
+        <div class="field" id="plannedDistanceField"><label for="editDistance" id="plannedDistanceLabel">Distance pr&eacute;vue (km)</label><input id="editDistance" type="text" inputmode="decimal" placeholder="Facultatif"></div>
+        <div class="field full"><label for="editNotes">Contenu / lieu <span class="optional">facultatif</span></label><textarea id="editNotes" rows="4" maxlength="6000" placeholder="&Eacute;chauffement, blocs, rendez-vous..."></textarea></div>
+        <p id="editorHint" class="help full"></p><p id="editorError" class="form-error full" role="alert"></p>
+      </div>
+      <footer class="dialog-footer"><button type="button" class="btn close-dialog">Annuler</button><button type="submit" class="btn primary" id="saveEditor">Enregistrer</button></footer>
+    </form>
+  </dialog>
+  <dialog id="moveDialog" class="dialog small-dialog" aria-labelledby="moveTitle">
+    <form id="moveForm" novalidate><header class="dialog-header"><div><p class="eyebrow">CHANGER DE JOUR</p><h2 id="moveTitle">D&eacute;placer la s&eacute;ance</h2></div><button type="button" class="icon-btn close-dialog" aria-label="Fermer"></button></header>
+      <div class="dialog-content"><p id="moveName"></p><div class="field"><label for="moveDate">Nouvelle date</label><input id="moveDate" type="date" min="2000-01-01" max="2100-12-31" required></div><p id="moveHint" class="help"></p><p id="moveError" class="form-error" role="alert"></p></div>
+      <footer class="dialog-footer"><button type="button" class="btn close-dialog">Annuler</button><button type="submit" class="btn primary">D&eacute;placer</button></footer>
+    </form>
+  </dialog>
+  <dialog id="feedbackDialog" class="dialog" aria-labelledby="feedbackTitle">
+    <form id="feedbackForm" novalidate>
+      <header class="dialog-header"><div><p class="eyebrow">BILAN DE S&Eacute;ANCE</p><h2 id="feedbackTitle">Comment c'&eacute;tait ?</h2></div><button type="button" class="icon-btn close-dialog" aria-label="Fermer"></button></header>
+      <div class="dialog-content">
+        <p id="feedbackSubtitle" class="help"></p>
+        <fieldset class="outcome-fieldset"><legend>Qu'avez-vous fait ?</legend><div class="outcome-options">
+          <label><input type="radio" name="outcome" value="completed" checked><span>Termin&eacute;e<small>M&ecirc;me si j'ai fait plus</small></span></label>
+          <label><input type="radio" name="outcome" value="shortened"><span>&Eacute;court&eacute;e<small>Une partie de la s&eacute;ance</small></span></label>
+          <label><input type="radio" name="outcome" value="skipped"><span>Non faite<small>Sans rattrapage automatique</small></span></label>
+          <label><input type="radio" name="outcome" value="rescheduled"><span>Report&eacute;e<small>Choisir une nouvelle date</small></span></label>
+        </div></fieldset>
+        <div id="reportDateField" class="field" hidden><label for="feedbackReportDate">Nouvelle date</label><input id="feedbackReportDate" type="date" min="2000-01-01" max="2100-12-31"></div>
+        <div id="outcomeReasonField" class="field" hidden><label for="feedbackReason">Motif <span class="optional">facultatif</span></label><input id="feedbackReason" type="text" maxlength="300" placeholder="Manque de temps, impr&eacute;vu, m&eacute;t&eacute;o..."></div>
+        <div id="performedFeedback">
+        <p class="help">Indiquez ce que vous avez vraiment fait. <strong>Une s&eacute;ance pr&eacute;vue pour 60 min peut &ecirc;tre enregistr&eacute;e &agrave; 75 ou 90 min.</strong></p>
+        <fieldset class="rating-fieldset"><legend>Votre ressenti</legend><div class="rating-options"><label><input type="radio" name="rating" value="easy"><span>Facile</span></label><label><input type="radio" name="rating" value="normal" checked><span>Normal</span></label><label><input type="radio" name="rating" value="hard"><span>Difficile</span></label></div></fieldset>
+        <div id="metricFields"></div>
+        <p class="help">Chiffres facultatifs. La vitesse et l'allure sont calcul&eacute;es avec votre distance et votre dur&eacute;e, sans suivi GPS.</p>
+        <p id="actualComparison" class="actual-comparison" aria-live="polite"></p>
+        </div>
+        <div class="field"><label for="feedbackComment">Un mot sur la s&eacute;ance <span class="optional">facultatif</span></label><textarea id="feedbackComment" rows="2" maxlength="3000" placeholder="Sensations, fatigue, conditions..."></textarea></div>
+        <p id="feedbackHint" class="help"></p><p id="feedbackError" class="form-error" role="alert"></p>
+      </div>
+      <footer class="dialog-footer"><button type="button" class="btn close-dialog">Annuler</button><button type="submit" class="btn primary" id="saveFeedback">Enregistrer le bilan</button></footer>
+    </form>
+  </dialog>
+  <dialog id="dataDialog" class="dialog" aria-labelledby="dataTitle">
+    <header class="dialog-header"><div><p class="eyebrow">SUR CET APPAREIL</p><h2 id="dataTitle">Vos donn&eacute;es</h2></div><button type="button" class="icon-btn close-dialog" aria-label="Fermer"></button></header>
+    <div class="dialog-content"><p>Le planning et les bilans restent enregistr&eacute;s dans ce navigateur. Il n'y a ni compte, ni synchronisation automatique entre t&eacute;l&eacute;phone et ordinateur.</p><p><strong>Avant de changer d'adresse de site ou d'appareil, exportez une sauvegarde.</strong> Ne videz pas les donn&eacute;es du site pour mettre l'app &agrave; jour.</p><div class="backup-actions"><button id="exportData" class="btn primary">Exporter la sauvegarde JSON</button><button id="importData" class="btn">Importer une sauvegarde</button><input id="importFile" type="file" accept=".json,application/json" hidden></div><p id="dataStatus" class="help"></p><details class="rules"><summary>Informations sur cette version</summary><p>v7.0 &middot; Plan initial : 279 s&eacute;ances du 12 octobre 2026 au 30 septembre 2027. Les retours de l'ancienne version sont repris automatiquement sur la m&ecirc;me adresse, le m&ecirc;me navigateur et le m&ecirc;me appareil. Les distances et dur&eacute;es absentes ne sont pas invent&eacute;es. Les anciens ajustements de 5 % restent tels quels ; le taux de 10 % s'applique aux nouvelles validations &eacute;ligibles.</p></details></div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toastMessage"></span><button id="toastAction" hidden></button><button id="dismissToast" class="icon-btn" aria-label="Fermer le message"></button></div>
+  <div id="dragLive" class="sr-only" aria-live="assertive"></div>
+  <noscript><p>Activez JavaScript pour utiliser le planning.</p></noscript>
+</body>
+</html>
